@@ -1,7 +1,7 @@
 # BustAPI — High-Performance Python Web Framework
 
 <p align="center">
-  <img src="https://github.com/GrandpaEJ/BustAPI/releases/download/v0.1.5/BustAPI.png" alt="BustAPI - Fast Python Web Framework powered by Rust and Actix-Web" width="200">
+  <img src="https://rustxpy.github.io/BustAPI/latest/assets/logo.png" alt="BustAPI - Fast Python Web Framework powered by Rust and Actix-Web" width="200">
 </p>
 
 <p align="center">
@@ -26,12 +26,12 @@ Under the hood, BustAPI runs on [Actix-Web](https://actix.rs/) — consistently 
 
 ### Why BustAPI?
 
-| Problem | BustAPI Solution |
-|---------|------------------|
-| Python web frameworks are slow | Rust core handles HTTP, JSON, routing |
-| ASGI/WSGI adds overhead | Built-in server, no middleware layers |
+| Problem                        | BustAPI Solution                           |
+| ------------------------------ | ------------------------------------------ |
+| Python web frameworks are slow | Rust core handles HTTP, JSON, routing      |
+| ASGI/WSGI adds overhead        | Built-in server, no middleware layers      |
 | Scaling requires complex setup | Native multiprocessing with `SO_REUSEPORT` |
-| Auth is always a pain | JWT, sessions, Argon2 hashing built-in |
+| Auth is always a pain          | JWT, sessions, Argon2 hashing built-in     |
 
 ### Key Highlights
 
@@ -77,13 +77,13 @@ No ASGI servers needed. No complex configuration. Just run your file.
 └─────────────────────────────────────────────────────────────┘
 ```
 
-| Component | Technology | Purpose |
-|-----------|------------|---------|
-| HTTP Server | Actix-Web 4.x | Ultra-fast async HTTP handling |
-| Serialization | serde_json | Zero-copy JSON encoding |
-| Memory | mimalloc | High-performance allocator |
-| Bindings | PyO3 0.27 | Python 3.10–3.14 support |
-| Async Runtime | Tokio | Non-blocking I/O |
+| Component     | Technology    | Purpose                        |
+| ------------- | ------------- | ------------------------------ |
+| HTTP Server   | Actix-Web 4.x | Ultra-fast async HTTP handling |
+| Serialization | serde_json    | Zero-copy JSON encoding        |
+| Memory        | mimalloc      | High-performance allocator     |
+| Bindings      | PyO3 0.27     | Python 3.10–3.14 support       |
+| Async Runtime | Tokio         | Non-blocking I/O               |
 
 ---
 
@@ -102,12 +102,14 @@ Pre-built wheels available — no Rust toolchain required!
 ## ✨ Features
 
 ### 🛣️ Routing
+
 - **Dynamic Routes** — `/users/<int:id>` with automatic type validation
 - **Blueprints** — Modular app organization (Flask-style)
 - **Turbo Routes** — Zero-overhead handlers for maximum speed
 - **Wildcard Paths** — `<path:filepath>` for catch-all routes
 
 ### 🔐 Authentication & Security
+
 - **JWT** — Create/validate tokens (HS256, HS384, HS512)
 - **Sessions** — Flask-Login compatible user management
 - **Password Hashing** — Argon2id (OWASP recommended)
@@ -115,12 +117,14 @@ Pre-built wheels available — no Rust toolchain required!
 - **Rate Limiting** — Rust-powered request throttling
 
 ### 🌐 HTTP Features
+
 - **WebSocket** — Full duplex communication + Turbo mode
 - **Streaming** — HTTP Range requests, video seeking
 - **File Uploads** — Multipart form handling
 - **Static Files** — Efficient serving with caching
 
 ### 🛠️ Developer Experience
+
 - **Hot Reload** — Rust-native file watcher (instant restarts)
 - **Templates** — Built-in Jinja2 via MiniJinja
 - **CLI Tool** — `bustapi new`, `bustapi run`, `bustapi routes`
@@ -128,6 +132,7 @@ Pre-built wheels available — no Rust toolchain required!
 - **Testing** — Built-in `TestClient` for unit tests
 
 ### 🔌 Compatibility
+
 - **ASGI/WSGI** — Works with Uvicorn, Gunicorn, Hypercorn
 - **FastAPI-style** — `Query()`, `Path()`, `Body()`, `Depends()`
 - **Flask-style** — `request`, `session`, `g`, `current_app`
@@ -202,19 +207,19 @@ def get_config():
 
 ### Standard Routes (`@app.route()`)
 
-| Platform | RPS | Mode |
-|----------|----:|------|
+| Platform  |         RPS | Mode           |
+| --------- | ----------: | -------------- |
 | **Linux** | **~25,000** | Single-process |
-| macOS | ~20,000 | Single-process |
-| Windows | ~17,000 | Single-process |
+| macOS     |     ~20,000 | Single-process |
+| Windows   |     ~17,000 | Single-process |
 
 ### Turbo Routes (`@app.turbo_route()`) — Linux
 
-| Configuration | RPS |
-|---------------|----:|
-| Static route | ~30,000 (single) |
-| **Multiprocessing (4 workers)** | **~105,000** |
-| **Cached (60s TTL)** | **~140,000** |
+| Configuration                   |              RPS |
+| ------------------------------- | ---------------: |
+| Static route                    | ~30,000 (single) |
+| **Multiprocessing (4 workers)** |     **~105,000** |
+| **Cached (60s TTL)**            |     **~140,000** |
 
 ### Framework Comparison (Turbo + Multiprocessing)
 
