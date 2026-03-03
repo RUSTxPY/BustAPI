@@ -73,7 +73,7 @@ BustAPI handles connections significantly faster than Python-native ASGI framewo
 
 ## Complete Example
 
-Check out the [comprehensive WebSocket demo](https://github.com/GrandpaEJ/BustAPI/blob/main/examples/websockets_demo.py) which includes:
+Check out the [comprehensive WebSocket demo](https://github.com/RUSTxPY/BustAPI/blob/main/examples/websockets_demo.py) which includes:
 *   Secure Configuration (Limits)
 *   Standard Echo
 *   Broadcast Chat

@@ -6,12 +6,12 @@ All notable changes to this project will be documented here.
 
 ### Fixed
 
-- **Request Parameter Injection** ([#22](https://github.com/GrandpaEJ/BustAPI/issues/22)):
+- **Request Parameter Injection** ([#22](https://github.com/RUSTxPY/BustAPI/issues/22)):
   - Fixed route handlers not receiving the `request` parameter when declared in their signature.
   - Added automatic request parameter injection in both sync and async wrapper functions.
   - JWT authentication endpoints now work correctly with request-dependent handlers.
 
-- **Blueprint JWT Support** ([#23](https://github.com/GrandpaEJ/BustAPI/issues/23)):
+- **Blueprint JWT Support** ([#23](https://github.com/RUSTxPY/BustAPI/issues/23)):
   - Improved error message when JWT is not initialized, with specific guidance for Blueprint usage.
   - Added comprehensive example (`examples/routing/blueprint_with_jwt.py`) showing correct JWT + Blueprint pattern.
   - Clarified that JWT must be initialized on the main app, not in blueprint files.
@@ -70,7 +70,7 @@ All notable changes to this project will be documented here.
 
 ### Fixed
 
-- **Pre-built Wheel Distribution** ([#20](https://github.com/GrandpaEJ/BustAPI/issues/20)):
+- **Pre-built Wheel Distribution** ([#20](https://github.com/RUSTxPY/BustAPI/issues/20)):
   - Unified CI workflow to build and publish wheels for all platforms:
     - **Linux**: x86_64 (glibc + musl), aarch64 (glibc + musl)
     - **Windows**: x86_64-pc-windows-msvc
@@ -90,10 +90,10 @@ All notable changes to this project will be documented here.
 ### Fixed
 
 - **CI/CD Expansion**: Added comprehensive cross-platform build support:
-  - **Alpine Linux (musl)**: Added `musllinux` wheels for x86_64 ([#14](https://github.com/GrandpaEJ/BustAPI/issues/14)).
+  - **Alpine Linux (musl)**: Added `musllinux` wheels for x86_64 ([#14](https://github.com/RUSTxPY/BustAPI/issues/14)).
   - **ARM64 (aarch64)**: Added support for both glibc (Ubuntu/Debian) and musl (Alpine) on ARM processors.
-- **Session Persistence**: Fixed bug where `session.pop()` did not save changes ([#17](https://github.com/GrandpaEJ/BustAPI/issues/17)).
-- **Template Path**: Fixed `BustAPI()` default template loading when no `import_name` is provided ([#15](https://github.com/GrandpaEJ/BustAPI/issues/15)).
+- **Session Persistence**: Fixed bug where `session.pop()` did not save changes ([#17](https://github.com/RUSTxPY/BustAPI/issues/17)).
+- **Template Path**: Fixed `BustAPI()` default template loading when no `import_name` is provided ([#15](https://github.com/RUSTxPY/BustAPI/issues/15)).
 - **Content-Type**: `render_template` now reliably returns `text/html` headers.
 
 ## [0.9.0] - 2026-01-22
@@ -270,7 +270,7 @@ All notable changes to this project will be documented here.
   - **Zero-Copy JSON**: Native Rust JSON serialization with `serde_json`, bypassing Python's `json.dumps()`.
   - **CPU-Specific Optimizations**: Build with `target-cpu=native` for maximum performance.
 
-- **Python 3.14 Support** ([#8](https://github.com/GrandpaEJ/BustAPI/issues/8)):
+- **Python 3.14 Support** ([#8](https://github.com/RUSTxPY/BustAPI/issues/8)):
   - Upgraded PyO3 from `0.23` to `0.27` to support Python 3.14.
   - Updated deprecated APIs: `Python::with_gil` → `Python::attach`, `PyObject` → `Py<PyAny>`, `downcast` → `cast`.
 
@@ -288,12 +288,12 @@ All notable changes to this project will be documented here.
 
 ### Added
 
-- **HTTP Range Support for Video Streaming**: Static files now support HTTP Range requests with `206 Partial Content` responses ([#1](https://github.com/GrandpaEJ/BustAPI/issues/1))
-- **Strict Path Routing**: Bidirectional redirect support (FastAPI-style) ensures `/foo` and `/foo/` are both accessible, returning `307 Temporary Redirect` to the canonical URL ([#7](https://github.com/GrandpaEJ/BustAPI/issues/7))
-- **Streaming Response Support**: Implemented `StreamingResponse` for efficiency streaming of content from sync and async iterators ([#3](https://github.com/GrandpaEJ/BustAPI/issues/3))
-- **Async Request Body Support**: Added `await request.body()` and `async for chunk in request.stream()` methods for async compatibility ([#4](https://github.com/GrandpaEJ/BustAPI/issues/4))
-- **Keyword Arguments Support**: Automatic injection of path and query parameters into handler keyword arguments ([#6](https://github.com/GrandpaEJ/BustAPI/issues/6))
-- **Query Params Alias**: Added `request.query_params` property (alias to `request.args`) for FastAPI compatibility ([#5](https://github.com/GrandpaEJ/BustAPI/issues/5))
+- **HTTP Range Support for Video Streaming**: Static files now support HTTP Range requests with `206 Partial Content` responses ([#1](https://github.com/RUSTxPY/BustAPI/issues/1))
+- **Strict Path Routing**: Bidirectional redirect support (FastAPI-style) ensures `/foo` and `/foo/` are both accessible, returning `307 Temporary Redirect` to the canonical URL ([#7](https://github.com/RUSTxPY/BustAPI/issues/7))
+- **Streaming Response Support**: Implemented `StreamingResponse` for efficiency streaming of content from sync and async iterators ([#3](https://github.com/RUSTxPY/BustAPI/issues/3))
+- **Async Request Body Support**: Added `await request.body()` and `async for chunk in request.stream()` methods for async compatibility ([#4](https://github.com/RUSTxPY/BustAPI/issues/4))
+- **Keyword Arguments Support**: Automatic injection of path and query parameters into handler keyword arguments ([#6](https://github.com/RUSTxPY/BustAPI/issues/6))
+- **Query Params Alias**: Added `request.query_params` property (alias to `request.args`) for FastAPI compatibility ([#5](https://github.com/RUSTxPY/BustAPI/issues/5))
 - **Flask-style `send_file` Helper**: Updated to return `FileResponse` for efficient file serving with Range support
 - **Absolute Path Support**: `FileResponse` now automatically converts relative paths to absolute paths for flexible file serving
 - Video streaming example (`examples/27_video_stream.py`) demonstrating static and dynamic video serving

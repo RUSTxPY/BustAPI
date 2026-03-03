@@ -2,8 +2,8 @@ site_name: BustAPI
 site_description: "The fastest Python web framework. Flask-like API with Rust-powered performance. 100,000+ requests/sec."
 site_author: GrandpaEJ
 site_url: https://grandpaej.github.io/BustAPI/
-repo_url: https://github.com/GrandpaEJ/BustAPI
-repo_name: GrandpaEJ/BustAPI
+repo_url: https://github.com/RUSTxPY/BustAPI
+repo_name: RUSTxPY/BustAPI
 edit_uri: edit/main/docs/
 
 copyright: |
@@ -13,7 +13,7 @@ copyright: |
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/GrandpaEJ/BustAPI
+      link: https://github.com/RUSTxPY/BustAPI
       name: BustAPI on GitHub
     - icon: fontawesome/brands/python
       link: https://pypi.org/project/bustapi/

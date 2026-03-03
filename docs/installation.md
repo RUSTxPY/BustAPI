@@ -92,7 +92,7 @@ To build from source (requires Rust):
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
     
     # Clone and build
-    git clone https://github.com/GrandpaEJ/BustAPI.git
+    git clone https://github.com/RUSTxPY/BustAPI.git
     cd BustAPI
     pip install maturin
     maturin develop --release
@@ -104,7 +104,7 @@ To build from source (requires Rust):
     # Install Rust from https://rustup.rs
     
     # Clone and build
-    git clone https://github.com/GrandpaEJ/BustAPI.git
+    git clone https://github.com/RUSTxPY/BustAPI.git
     cd BustAPI
     pip install maturin
     maturin develop --release

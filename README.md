@@ -11,9 +11,9 @@
 
 <p align="center">
   <a href="https://pypi.org/project/bustapi/"><img src="https://img.shields.io/pypi/v/bustapi?color=blue&style=for-the-badge&logo=pypi" alt="BustAPI on PyPI"></a>
-  <a href="https://github.com/GrandpaEJ/BustAPI/actions"><img src="https://img.shields.io/github/actions/workflow/status/GrandpaEJ/BustAPI/ci.yml?style=for-the-badge&logo=github" alt="CI Status"></a>
+  <a href="https://github.com/RUSTxPY/BustAPI/actions"><img src="https://img.shields.io/github/actions/workflow/status/RUSTxPY/BustAPI/ci.yml?style=for-the-badge&logo=github" alt="CI Status"></a>
   <a href="https://pypi.org/project/bustapi/"><img src="https://img.shields.io/pypi/pyversions/bustapi?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.10 3.11 3.12 3.13 3.14"></a>
-  <a href="https://github.com/GrandpaEJ/BustAPI/blob/main/LICENSE"><img src="https://img.shields.io/github/license/GrandpaEJ/BustAPI?style=for-the-badge" alt="MIT License"></a>
+  <a href="https://github.com/RUSTxPY/BustAPI/blob/main/LICENSE"><img src="https://img.shields.io/github/license/RUSTxPY/BustAPI?style=for-the-badge" alt="MIT License"></a>
 </p>
 
 ---
@@ -479,7 +479,7 @@ If BustAPI helps your project, consider supporting its development:
 
 ## 🌠 Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=GrandpaEJ/BustAPI&type=Date)](https://www.star-history.com/#GrandpaEJ/BustAPI&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=RUSTxPY/BustAPI&type=Date)](https://www.star-history.com/#RUSTxPY/BustAPI&Date)
 
 ---
 

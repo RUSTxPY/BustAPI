@@ -7,7 +7,7 @@
 **High-performance Python web framework with Rust backend**
 
 [:material-rocket-launch: Get Started](quickstart.md){ .md-button .md-button--primary }
-[:material-github: GitHub](https://github.com/GrandpaEJ/BustAPI){ .md-button }
+[:material-github: GitHub](https://github.com/RUSTxPY/BustAPI){ .md-button }
 
 </div>
 
