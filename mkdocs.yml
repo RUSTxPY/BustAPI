@@ -1,7 +1,7 @@
 site_name: BustAPI
 site_description: "The fastest Python web framework. Flask-like API with Rust-powered performance. 100,000+ requests/sec."
 site_author: GrandpaEJ
-site_url: https://grandpaej.github.io/BustAPI/
+site_url: https://RUSTxPY.github.io/BustAPI/
 repo_url: https://github.com/RUSTxPY/BustAPI
 repo_name: RUSTxPY/BustAPI
 edit_uri: edit/main/docs/
@@ -37,7 +37,7 @@ theme:
   logo: assets/logo.png
   favicon: assets/logo.png
   language: en
-  
+
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
@@ -53,11 +53,11 @@ theme:
       toggle:
         icon: material/weather-night
         name: Switch to light mode
-  
+
   font:
     text: Inter
     code: JetBrains Mono
-  
+
   icon:
     repo: fontawesome/brands/github
     admonition:
@@ -66,7 +66,7 @@ theme:
       warning: fontawesome/solid/triangle-exclamation
       danger: fontawesome/solid/skull
       example: fontawesome/solid/flask
-  
+
   features:
     # Navigation
     - navigation.instant
@@ -79,22 +79,22 @@ theme:
     - navigation.path
     - navigation.top
     - navigation.footer
-    
+
     # Table of Contents
     - toc.follow
     - toc.integrate
-    
+
     # Search
     - search.suggest
     - search.highlight
     - search.share
-    
+
     # Content
     - content.code.copy
     - content.code.annotate
     - content.tabs.link
     - content.tooltips
-    
+
     # Header
     - header.autohide
     - announce.dismiss
@@ -125,9 +125,8 @@ markdown_extensions:
       custom_fences:
         - name: mermaid
           class: mermaid
-          format: !!python/name:pymdownx.superfences.fence_code_format
-  
-  # Content
+          format: !!python/name:pymdownx.superfences.fence_code_format # Content
+
   - admonition
   - pymdownx.details
   - pymdownx.tabbed:
@@ -138,7 +137,7 @@ markdown_extensions:
   - pymdownx.mark
   - pymdownx.tilde
   - pymdownx.smartsymbols
-  
+
   # Formatting
   - attr_list
   - md_in_html
