@@ -1,5 +1,6 @@
 import base64
 import json
+from datetime import datetime
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
 
@@ -14,6 +15,16 @@ class SessionMixin(dict):
     def __init__(self, initial=None):
         super().__init__(initial or {})
         self.modified = False
+        self._permanent = False
+
+    @property
+    def permanent(self) -> bool:
+        return self._permanent
+
+    @permanent.setter
+    def permanent(self, value: bool) -> None:
+        self._permanent = value
+        self.modified = True
 
     def __setitem__(self, key, value):
         super().__setitem__(key, value)
@@ -114,9 +125,18 @@ class SecureCookieSessionInterface(SessionInterface):
             signer = Signer(app.secret_key)
             val = signer.encode_session(self.session_cookie_name, dict(session))
 
+            # Handle expiration
+            expires = None
+            max_age = None
+            if session.permanent and app.permanent_session_lifetime:
+                expires = datetime.utcnow() + app.permanent_session_lifetime
+                max_age = int(app.permanent_session_lifetime.total_seconds())
+
             response.set_cookie(
                 self.session_cookie_name,
                 val,
+                expires=expires,
+                max_age=max_age,
                 httponly=True,
                 domain=domain,
                 path=path,
