@@ -324,8 +324,8 @@ def render_template(template_name: str, **context) -> Response:
         )
 
         # Inject global objects if not provided
-        from ..http.request import g, request, session
         from ..http.request import current_app as _current_app
+        from ..http.request import g, request, session
 
         if "request" not in context:
             try:
