@@ -46,6 +46,7 @@ class Request:
         self._form_cache = None
         self._files_cache = None
         self._args_cache = None
+        self._user = None
 
     @classmethod
     def _from_rust_request(cls, rust_request) -> "Request":
@@ -349,6 +350,16 @@ class Request:
     def is_xhr(self) -> bool:
         """Check if request was made via XMLHttpRequest."""
         return self.headers.get("X-Requested-With", "").lower() == "xmlhttprequest"
+
+    @property
+    def user(self) -> Any:
+        """Get the authenticated user."""
+        return self._user
+
+    @user.setter
+    def user(self, value: Any):
+        """Set the authenticated user."""
+        self._user = value
 
 
 class EnvironHeaders:

@@ -323,6 +323,31 @@ def render_template(template_name: str, **context) -> Response:
             autoescape=select_autoescape(["html", "xml"]),
         )
 
+        # Inject global objects if not provided
+        from ..http.request import g, request, session
+        from ..http.request import current_app as _current_app
+
+        if "request" not in context:
+            try:
+                context["request"] = request
+            except RuntimeError:
+                pass
+        if "session" not in context:
+            try:
+                context["session"] = session
+            except RuntimeError:
+                pass
+        if "g" not in context:
+            try:
+                context["g"] = g
+            except RuntimeError:
+                pass
+        if "current_app" not in context:
+            try:
+                context["current_app"] = _current_app
+            except RuntimeError:
+                pass
+
         # Load and render template
         template = env.get_template(template_name)
         html = template.render(**context)
