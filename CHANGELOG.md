@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented here.
 
+## [0.11.0] - 2026-04-07
+
+### Release Candidate Finalization
+- Promoted 0.11.0-rc2 to full 0.11.0 release.
+- Hardened worker process cleanup by sending SIGKILL to force process exit on shutdown, bypassing execution stalls within the compiled Rust codebase.
+- Added omitted dependencies (`psutil`, `pytest-asyncio`, `anyio`) to GitHub Action multi-platform testing workflows.
+- Renamed internal `TestClient` utility to `BustTestClient` to prevent inadvertent PyTest test collection warnings.
+
 ## [0.11.0-rc2] - 2026-04-07
 
 ### Fixed

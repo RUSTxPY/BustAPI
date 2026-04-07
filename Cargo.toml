@@ -1,6 +1,6 @@
 [package]
 name = "bustapi_core"
-version = "0.11.0-rc2"
+version = "0.11.0"
 edition = "2021"
 
 [lib]
