@@ -134,15 +134,17 @@ def spawn_workers_linux(
     print(f"[BustAPI] Starting {workers} worker processes (Linux SO_REUSEPORT)...")
 
     def signal_handler(sig, frame):
-        # Only parent should handle signals for child management
+        # Children should exit immediately on signal
         if os.getpid() != parent_pid:
-            return
+            sys.exit(0)
+        
         print("\n[BustAPI] Shutting down workers...")
         for p in processes:
             try:
                 if p.is_alive():
-                    p.terminate()
-            except (AssertionError, OSError):
+                    # Use kill() instead of terminate() because workers might be blocked in Rust
+                    p.kill()
+            except (AssertionError, OSError, AttributeError):
                 pass  # Process already dead or not our child
         sys.exit(0)
 
