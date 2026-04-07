@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented here.
 
+## [0.11.0-rc2] - 2026-04-07
+
+### Fixed
+
+- **Multiprocessing Stability** ([#24](https://github.com/GrandpaEJ/BustAPI/issues/24)):
+  - Fixed a critical `TypeError: cannot pickle 'builtins.PyBustApp' object` when spawning workers on Linux in environments where `spawn` or `forkserver` is used (e.g., Python 3.14).
+  - Forced the `fork` start method for internal worker spawning on Linux to ensure complex Rust state is shared correctly via memory cloning.
+  - Improved process cleanup and signal propagation; workers now terminate reliably when the parent process receives `SIGINT` or `SIGTERM`.
+
+### Added
+
+- **Stability Test Suite**:
+  - Added `tests/test_multiprocess_stability.py` to verify multiprocessing robustness across various scenarios (start methods, signal handling, route inheritance).
+  - Verified compatibility with modern Python package managers using `uv`.
+
 ## [0.10.3] - 2026-02-14
 
 ### Fixed
