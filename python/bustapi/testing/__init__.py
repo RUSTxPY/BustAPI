@@ -1,3 +1,3 @@
-from .client import FlaskClient, TestClient, TestResponse
+from .client import BustTestClient, FlaskClient, TestResponse
 
-__all__ = ["TestClient", "TestResponse", "FlaskClient"]
+__all__ = ["BustTestClient", "TestResponse", "FlaskClient"]

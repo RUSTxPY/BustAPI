@@ -44,6 +44,8 @@ dev = [
     "mypy>=1.0",
     "pre-commit>=3.0",
     "sqlmodel>=0.0.16",
+    "psutil>=5.9.0",
+    "requests>=2.32.5",
 ]
 
 benchmarks = [
@@ -51,10 +53,8 @@ benchmarks = [
     "catzilla>=0.2.0",
     "flask>=3.1.2",
     "fastapi>=0.124.0",
-    "requests>=2.32.5",
     "gunicorn>=23.0.0",
     "httpx>=0.28.1",
-    "psutil>=5.9.0",
 
     "matplotlib>=3.10.0",
     "sanic>=23.12.0",

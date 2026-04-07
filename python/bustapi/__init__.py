@@ -93,7 +93,7 @@ from .security.extension import Security
 from .security.rate_limit import RateLimit
 
 # Import testing utilities
-from .testing.client import TestClient
+from .testing.client import BustTestClient
 
 __all__ = [
     "BustAPI",
@@ -121,7 +121,7 @@ __all__ = [
     "current_app",
     "Middleware",
     "RateLimiter",
-    "TestClient",
+    "BustTestClient",
     "Header",
     "Cookie",
     "Form",

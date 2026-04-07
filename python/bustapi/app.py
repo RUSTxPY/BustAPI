@@ -370,8 +370,8 @@ class BustAPI(
             **kwargs: Additional test client options
 
         Returns:
-            TestClient instance
+            BustTestClient instance
         """
-        from .testing import TestClient
+        from .testing import BustTestClient
 
-        return TestClient(self, use_cookies=use_cookies, **kwargs)
+        return BustTestClient(self, use_cookies=use_cookies, **kwargs)

@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "python"))
 
 import pytest
 from bustapi import BustAPI, Path
-from bustapi.testing import TestClient
+from bustapi.testing import BustTestClient
 
 
 class TestPathValidation:
@@ -24,7 +24,7 @@ class TestPathValidation:
         def get_user(user_id: int = Path(ge=1)):
             return {"user_id": user_id}
 
-        client = TestClient(app)
+        client = BustTestClient(app)
 
         # Valid: user_id >= 1
         response = client.get("/users/1")
@@ -51,7 +51,7 @@ class TestPathValidation:
         def get_item(item_id: int = Path(le=1000)):
             return {"item_id": item_id}
 
-        client = TestClient(app)
+        client = BustTestClient(app)
 
         # Valid: item_id <= 1000
         response = client.get("/items/1000")
@@ -72,7 +72,7 @@ class TestPathValidation:
         def get_product(product_id: int = Path(ge=1, le=100)):
             return {"product_id": product_id}
 
-        client = TestClient(app)
+        client = BustTestClient(app)
 
         # Valid: 1 <= product_id <= 100
         response = client.get("/products/1")
@@ -100,7 +100,7 @@ class TestPathValidation:
         def get_value(value: int = Path(gt=0, lt=10)):
             return {"value": value}
 
-        client = TestClient(app)
+        client = BustTestClient(app)
 
         # Valid: 0 < value < 10
         response = client.get("/values/1")
@@ -128,7 +128,7 @@ class TestPathValidation:
         def get_tag(tag: str = Path(min_length=3)):
             return {"tag": tag}
 
-        client = TestClient(app)
+        client = BustTestClient(app)
 
         # Valid: len(tag) >= 3
         response = client.get("/tags/abc")
@@ -149,7 +149,7 @@ class TestPathValidation:
         def get_slug(slug: str = Path(max_length=10)):
             return {"slug": slug}
 
-        client = TestClient(app)
+        client = BustTestClient(app)
 
         # Valid: len(slug) <= 10
         response = client.get("/slugs/hello")
@@ -170,7 +170,7 @@ class TestPathValidation:
         def get_username(username: str = Path(min_length=3, max_length=20)):
             return {"username": username}
 
-        client = TestClient(app)
+        client = BustTestClient(app)
 
         # Valid: 3 <= len(username) <= 20
         response = client.get("/usernames/abc")
@@ -198,7 +198,7 @@ class TestPathValidation:
         def get_code(code: str = Path(regex=r"^[A-Z]{3}-\d{4}$")):
             return {"code": code}
 
-        client = TestClient(app)
+        client = BustTestClient(app)
 
         # Valid: matches pattern
         response = client.get("/codes/ABC-1234")
@@ -225,7 +225,7 @@ class TestPathValidation:
         def update_quantity(item_id: int = Path(ge=1), qty: int = Path(ge=1, le=100)):
             return {"item_id": item_id, "quantity": qty}
 
-        client = TestClient(app)
+        client = BustTestClient(app)
 
         # Both valid
         response = client.get("/items/5/quantity/10")
@@ -254,7 +254,7 @@ class TestPathValidation:
         def check_price(price: float = Path(ge=0.01, le=999.99)):
             return {"price": price}
 
-        client = TestClient(app)
+        client = BustTestClient(app)
 
         # Valid prices
         response = client.get("/prices/0.01")
@@ -282,7 +282,7 @@ class TestPathValidation:
         def get_user(user_id: int):
             return {"user_id": user_id}
 
-        client = TestClient(app)
+        client = BustTestClient(app)
 
         # Should work with any valid integer
         response = client.get("/users/0")
@@ -299,7 +299,7 @@ class TestPathValidation:
         def get_user(user_id: int = Path(ge=1, le=1000, description="User ID")):
             return {"user_id": user_id}
 
-        client = TestClient(app)
+        client = BustTestClient(app)
 
         response = client.get("/users/0")
         assert response.status_code == 400

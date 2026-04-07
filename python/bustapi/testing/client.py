@@ -96,7 +96,7 @@ class TestResponse:
         return f"<TestResponse {self.status_code} [{content_type}]>"
 
 
-class TestClient:
+class BustTestClient:
     """
     Test client for BustAPI applications (Flask-compatible).
 
@@ -305,8 +305,8 @@ class TestClient:
 
         # Create response object
         # Headers is a list of tuples, convert to dict for Headers object if needed,
-        # but Response takes args... wait, we need to return something that TestClient uses.
-        # TestClient expects something that has status_code, headers (dict), data.
+        # but Response takes args... wait, we need to return something that BustTestClient uses.
+        # BustTestClient expects something that has status_code, headers (dict), data.
 
         # Convert headers list to dict
         headers_dict = {}
@@ -315,8 +315,8 @@ class TestClient:
                 headers_dict[k] = v
 
         # We can reuse the Response class or just a simple mock
-        # But TestClient expects attributes.
-        # Actually TestClient accesses .status_code, .headers, .data on the returned object.
+        # But BustTestClient expects attributes.
+        # Actually BustTestClient accesses .status_code, .headers, .data on the returned object.
         # The Response class has these?
         # Response class in bustapi/http/response.py usually has these.
         # Let's verify Response signature.
@@ -372,7 +372,7 @@ class TestClient:
         return self.open(path, method="TRACE", **kwargs)
 
     # Context manager support
-    def __enter__(self) -> "TestClient":
+    def __enter__(self) -> "BustTestClient":
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
@@ -439,7 +439,7 @@ def make_test_environ_builder(*args, **kwargs):
     return {}
 
 
-class FlaskClient(TestClient):
+class FlaskClient(BustTestClient):
     """Alias for Flask compatibility."""
 
     pass
@@ -447,7 +447,7 @@ class FlaskClient(TestClient):
 
 # Re-export for convenience
 __all__ = [
-    "TestClient",
+    "BustTestClient",
     "TestResponse",
     "FlaskClient",
     "MockRequest",
