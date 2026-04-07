@@ -122,7 +122,13 @@ if __name__ == '__main__':
 
         # Send SIGINT to parent
         proc.send_signal(signal.SIGINT)
-        time.sleep(3)
+
+        # Polling loop to wait for workers to exit (up to 15 seconds)
+        for _ in range(15):
+            alive_workers = [pid for pid in worker_pids if psutil.pid_exists(pid)]
+            if not alive_workers:
+                break
+            time.sleep(1)
 
         # Check if workers are gone
         for pid in worker_pids:
