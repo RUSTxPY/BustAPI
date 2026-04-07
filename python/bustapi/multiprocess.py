@@ -137,7 +137,7 @@ def spawn_workers_linux(
         # Children should exit immediately on signal
         if os.getpid() != parent_pid:
             sys.exit(0)
-        
+
         print("\n[BustAPI] Shutting down workers...")
         for p in processes:
             try:
