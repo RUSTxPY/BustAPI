@@ -110,29 +110,29 @@ jobs:
           echo "Platform: $RUNNER_OS"
           echo "Python: ${{ matrix.python-version }}"
           echo ""
-          
+
           # Create benchmark server
           cat > /tmp/bench_server.py << 'EOF'
           from bustapi import BustAPI
           app = BustAPI()
-          
+
           @app.turbo_route("/")
           def index():
               return "Hello, World!"
-          
+
           @app.turbo_route("/json")
           def json_endpoint():
               return {"hello": "world", "framework": "BustAPI"}
-          
+
           if __name__ == "__main__":
               app.run(host="127.0.0.1", port=8888, workers=4, debug=False)
           EOF
-          
+
           # Start server
           $VENV_PY /tmp/bench_server.py &
           SERVER_PID=$!
           sleep 5
-          
+
           # Run benchmark with oha
           echo "--- Benchmark with oha (10s, 4 threads, 50 connections) ---"
           echo ""
@@ -141,7 +141,7 @@ jobs:
           echo ""
           echo "JSON endpoint (/json):"
           oha -z 10s -c 50 --no-tui http://127.0.0.1:8888/json
-          
+
           # Cleanup
           kill $SERVER_PID 2>/dev/null || true
           echo ""
