@@ -114,6 +114,21 @@ def spawn_workers_linux(
     Each child binds independently with SO_REUSEPORT.
     Kernel handles load balancing.
     """
+    # Ensure nested multiprocessing start mode is 'fork'
+    # This avoids 'TypeError: cannot pickle builtins.PyBustApp' on systems
+    # where 'spawn' or 'forkserver' might be the default (e.g. newer Python/Linux distros)
+    try:
+        current_method = multiprocessing.get_start_method(allow_none=True)
+        if current_method != "fork":
+            multiprocessing.set_start_method("fork", force=True)
+            if verbose:
+                print(f"[BustAPI] Forced 'fork' start method (was '{current_method}')")
+    except (RuntimeError, ValueError) as e:
+        # If already started or not supported, we log and try to continue
+        # but pickling might still fail if not 'fork'.
+        if debug:
+            print(f"⚠️ [BustAPI] Warning: Could not set start method to 'fork': {e}")
+
     processes = []
     parent_pid = os.getpid()  # Track parent PID
     print(f"[BustAPI] Starting {workers} worker processes (Linux SO_REUSEPORT)...")
@@ -141,9 +156,12 @@ def spawn_workers_linux(
     except (ValueError, RuntimeError):
         pass  # Not in main thread or interpreter shutting down
 
+    # We use a separate context for the process to avoid interfering with global state
+    ctx = multiprocessing.get_context("fork")
+
     for i in range(workers):
         show_banner = workers if i == 0 else None
-        p = multiprocessing.Process(
+        p = ctx.Process(
             target=rust_app.run,
             args=(host, port, 1, debug, verbose, show_banner),
             name=f"bustapi-worker-{i + 1}",
