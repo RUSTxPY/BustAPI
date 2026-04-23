@@ -42,7 +42,19 @@ class RouteRegistration:
 
         self.view_functions[endpoint] = view_func
         self.url_map[rule] = {"endpoint": endpoint, "methods": methods}
-        self._url_rules.append({"rule": rule, "endpoint": endpoint, "methods": methods})
+        self._url_rules.append(
+            {
+                "rule": rule,
+                "endpoint": endpoint,
+                "methods": methods,
+                "tags": options.get("tags"),
+                "summary": options.get("summary"),
+                "description": options.get("description"),
+                "response_model": options.get("response_model"),
+                "responses": options.get("responses"),
+                "deprecated": options.get("deprecated", False),
+            }
+        )
 
         # Register parameter validators for this route
         for method in methods:
@@ -111,7 +123,7 @@ class RouteRegistration:
         return self.route(rule, methods=["OPTIONS"], **options)
 
     def turbo_route(
-        self, rule: str, methods: list = None, cache_ttl: int = 0
+        self, rule: str, methods: list = None, cache_ttl: int = 0, **options
     ) -> Callable:
         """
         Ultra-fast route decorator for maximum performance.
@@ -151,7 +163,19 @@ class RouteRegistration:
             endpoint = f.__name__
             self.view_functions[endpoint] = f
             self.url_map[rule] = {"endpoint": endpoint, "methods": methods}
-            self._url_rules.append({"rule": rule, "endpoint": endpoint, "methods": methods})
+            self._url_rules.append(
+                {
+                    "rule": rule,
+                    "endpoint": endpoint,
+                    "methods": methods,
+                    "tags": options.get("tags"),
+                    "summary": options.get("summary"),
+                    "description": options.get("description"),
+                    "response_model": options.get("response_model"),
+                    "responses": options.get("responses"),
+                    "deprecated": options.get("deprecated", False),
+                }
+            )
 
             if param_specs:
                 # Dynamic turbo route with typed params

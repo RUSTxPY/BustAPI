@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented here.
 
+## [0.11.1] - 2026-04-23
+
+### Added
+- **Advanced OpenAPI Metadata**:
+  - Routing decorators (`add_url_rule`, `turbo_route`) now support rich OpenAPI metadata: `tags`, `summary`, `description`, `deprecated`, `response_model`, and `responses`.
+  - Added `_register_schema()` to auto-generate and reference reusable `$ref` schemas in `components/schemas` for `Struct` response models and single request body objects.
+
 ## [0.11.0] - 2026-04-07
 
 ### Release Candidate Finalization

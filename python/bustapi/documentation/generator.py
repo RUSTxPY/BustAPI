@@ -123,6 +123,38 @@ class BustAPIDocs:
         """
         return Response(html, mimetype="text/html")
 
+    def _register_schema(self, schema_dict: dict, type_hint: Any) -> dict:
+        """Helper to register a Struct to components and return a $ref, or build basic schema."""
+        try:
+            from ..safe.types import Struct
+
+            if isinstance(type_hint, type) and issubclass(type_hint, Struct):
+                name = type_hint.__name__
+                if name not in schema_dict["components"]["schemas"]:
+                    import typing
+
+                    props = {}
+                    hints = typing.get_type_hints(type_hint)
+                    for f_name, f_type in hints.items():
+                        if f_name.startswith("_"):
+                            continue
+                        f_type_str = "string"
+                        if f_type is int:
+                            f_type_str = "integer"
+                        elif f_type is float:
+                            f_type_str = "number"
+                        elif f_type is bool:
+                            f_type_str = "boolean"
+                        props[f_name] = {"type": f_type_str}
+                    schema_dict["components"]["schemas"][name] = {
+                        "type": "object",
+                        "properties": props,
+                    }
+                return {"$ref": f"#/components/schemas/{name}"}
+        except Exception:
+            pass
+        return {"type": "object"}
+
     def get_openapi_schema(self) -> Dict[str, Any]:
         """Generate or return cached OpenAPI schema."""
         if self._schema_cache:
@@ -140,7 +172,14 @@ class BustAPIDocs:
         }
 
         # Inspect routes
-        routes = getattr(self.app, "_url_rules", [{"rule": r, "endpoint": info["endpoint"], "methods": info["methods"]} for r, info in self.app.url_map.items()])
+        routes = getattr(
+            self.app,
+            "_url_rules",
+            [
+                {"rule": r, "endpoint": info["endpoint"], "methods": info["methods"]}
+                for r, info in self.app.url_map.items()
+            ],
+        )
         for route_info in routes:
             rule = route_info["rule"]
             endpoint_name = route_info["endpoint"]
@@ -164,8 +203,14 @@ class BustAPIDocs:
             openapi_path = re.sub(r"<(?:int:|float:|path:)?([^>]+)>", r"{\1}", rule)
 
             docstring = inspect.getdoc(view_func) or ""
-            summary = docstring.split("\n")[0] if docstring else endpoint_name
-            description = docstring
+            summary = route_info.get("summary") or (
+                docstring.split("\n")[0] if docstring else endpoint_name
+            )
+            description = route_info.get("description") or docstring
+            tags = route_info.get("tags")
+            deprecated = route_info.get("deprecated", False)
+            response_model = route_info.get("response_model")
+            responses = route_info.get("responses")
 
             for method in methods:
                 method_lower = method.lower()
@@ -193,6 +238,21 @@ class BustAPIDocs:
                         },
                     },
                 }
+
+                if tags:
+                    operation["tags"] = tags
+                if deprecated:
+                    operation["deprecated"] = True
+
+                if response_model:
+                    schema_ref = self._register_schema(schema, response_model)
+                    operation["responses"]["200"]["content"] = {
+                        "application/json": {"schema": schema_ref}
+                    }
+
+                if responses:
+                    for status_code, response_info in responses.items():
+                        operation["responses"][str(status_code)] = response_info
 
                 # Extract path parameters with Path metadata
                 if "{" in openapi_path:
@@ -270,52 +330,69 @@ class BustAPIDocs:
                         operation["parameters"] = []
                     for q_name, (q_default, q_anno) in query_vals.items():
                         q_type = "string"
-                        if q_anno == int:
+                        if q_anno is int:
                             q_type = "integer"
-                        elif q_anno == float:
+                        elif q_anno is float:
                             q_type = "number"
-                        elif q_anno == bool:
+                        elif q_anno is bool:
                             q_type = "boolean"
-                        
-                        operation["parameters"].append({
-                            "name": q_name,
-                            "in": "query",
-                            "required": q_default is inspect.Parameter.empty,
-                            "schema": {"type": q_type}
-                        })
+
+                        operation["parameters"].append(
+                            {
+                                "name": q_name,
+                                "in": "query",
+                                "required": q_default is inspect.Parameter.empty,
+                                "schema": {"type": q_type},
+                            }
+                        )
 
                 # Extract request body
                 body_vals = self.app.body_validators.get((rule, method))
                 if body_vals:
+                    # Check if single Struct parameter
+                    if len(body_vals) == 1:
+                        b_name, (b_default, b_anno) = list(body_vals.items())[0]
+                        try:
+                            from ..safe.types import Struct
+
+                            if isinstance(b_anno, type) and issubclass(b_anno, Struct):
+                                schema_ref = self._register_schema(schema, b_anno)
+                                operation["requestBody"] = {
+                                    "required": b_default is inspect.Parameter.empty,
+                                    "content": {
+                                        "application/json": {"schema": schema_ref}
+                                    },
+                                }
+                                path_item[method_lower] = operation
+                                continue
+                        except Exception:
+                            pass
+
                     # Collect all body parameters into a single object schema
                     props = {}
                     required_props = []
                     for b_name, (b_default, b_anno) in body_vals.items():
                         b_type_str = "string"
-                        if b_anno == int:
+                        if b_anno is int:
                             b_type_str = "integer"
-                        elif b_anno == float:
+                        elif b_anno is float:
                             b_type_str = "number"
-                        elif b_anno == bool:
+                        elif b_anno is bool:
                             b_type_str = "boolean"
                         elif hasattr(b_anno, "__annotations__"):
                             b_type_str = "object"
-                        
+
                         props[b_name] = {"type": b_type_str}
                         if b_default is inspect.Parameter.empty:
                             required_props.append(b_name)
-                    
+
                     schema_ref = {"type": "object", "properties": props}
                     if required_props:
                         schema_ref["required"] = required_props
 
                     operation["requestBody"] = {
                         "required": len(required_props) > 0,
-                        "content": {
-                            "application/json": {
-                                "schema": schema_ref
-                            }
-                        }
+                        "content": {"application/json": {"schema": schema_ref}},
                     }
 
                 path_item[method_lower] = operation
