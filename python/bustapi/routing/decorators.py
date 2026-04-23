@@ -42,6 +42,7 @@ class RouteRegistration:
 
         self.view_functions[endpoint] = view_func
         self.url_map[rule] = {"endpoint": endpoint, "methods": methods}
+        self._url_rules.append({"rule": rule, "endpoint": endpoint, "methods": methods})
 
         # Register parameter validators for this route
         for method in methods:
@@ -150,6 +151,7 @@ class RouteRegistration:
             endpoint = f.__name__
             self.view_functions[endpoint] = f
             self.url_map[rule] = {"endpoint": endpoint, "methods": methods}
+            self._url_rules.append({"rule": rule, "endpoint": endpoint, "methods": methods})
 
             if param_specs:
                 # Dynamic turbo route with typed params

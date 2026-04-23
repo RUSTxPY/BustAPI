@@ -94,6 +94,9 @@ class Array(Validator):
 def _validate_field(value: Any, type_hint: Any, field_name: str) -> Any:
     """Shared validation logic."""
 
+    if type_hint is Any:
+        return value
+
     # 1. Validator Subclass (stateless)
     if (
         isinstance(type_hint, type)
@@ -150,10 +153,11 @@ class Struct:
             if name.startswith("_"):
                 continue
 
-            value = kwargs.get(name)
+            _sentinel = object()
+            value = kwargs.get(name, _sentinel)
 
             # Check for missing required fields
-            if value is None:
+            if value is _sentinel:
                 raise ValueError(f"Missing required field: '{name}'")
 
             # Validate

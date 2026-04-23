@@ -115,6 +115,7 @@ class BustAPI(
 
         # URL map and rules
         self.url_map: Dict[str, Dict] = {}
+        self._url_rules: List[Dict[str, Any]] = []
 
         # Parameter validation metadata
         self.path_validators: Dict[tuple, Dict[str, Any]] = {}

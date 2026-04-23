@@ -140,9 +140,11 @@ class BustAPIDocs:
         }
 
         # Inspect routes
-        for rule, endpoint_info in self.app.url_map.items():
-            endpoint_name = endpoint_info["endpoint"]
-            methods = endpoint_info["methods"]
+        routes = getattr(self.app, "_url_rules", [{"rule": r, "endpoint": info["endpoint"], "methods": info["methods"]} for r, info in self.app.url_map.items()])
+        for route_info in routes:
+            rule = route_info["rule"]
+            endpoint_name = route_info["endpoint"]
+            methods = route_info["methods"]
 
             # Skip internal routes
             if endpoint_name in ["openapi_schema", "swagger_ui", "redoc_ui", "static"]:
@@ -260,6 +262,61 @@ class BustAPIDocs:
 
                     if parameters:
                         operation["parameters"] = parameters
+
+                # Extract query parameters
+                query_vals = self.app.query_validators.get((rule, method))
+                if query_vals:
+                    if "parameters" not in operation:
+                        operation["parameters"] = []
+                    for q_name, (q_default, q_anno) in query_vals.items():
+                        q_type = "string"
+                        if q_anno == int:
+                            q_type = "integer"
+                        elif q_anno == float:
+                            q_type = "number"
+                        elif q_anno == bool:
+                            q_type = "boolean"
+                        
+                        operation["parameters"].append({
+                            "name": q_name,
+                            "in": "query",
+                            "required": q_default is inspect.Parameter.empty,
+                            "schema": {"type": q_type}
+                        })
+
+                # Extract request body
+                body_vals = self.app.body_validators.get((rule, method))
+                if body_vals:
+                    # Collect all body parameters into a single object schema
+                    props = {}
+                    required_props = []
+                    for b_name, (b_default, b_anno) in body_vals.items():
+                        b_type_str = "string"
+                        if b_anno == int:
+                            b_type_str = "integer"
+                        elif b_anno == float:
+                            b_type_str = "number"
+                        elif b_anno == bool:
+                            b_type_str = "boolean"
+                        elif hasattr(b_anno, "__annotations__"):
+                            b_type_str = "object"
+                        
+                        props[b_name] = {"type": b_type_str}
+                        if b_default is inspect.Parameter.empty:
+                            required_props.append(b_name)
+                    
+                    schema_ref = {"type": "object", "properties": props}
+                    if required_props:
+                        schema_ref["required"] = required_props
+
+                    operation["requestBody"] = {
+                        "required": len(required_props) > 0,
+                        "content": {
+                            "application/json": {
+                                "schema": schema_ref
+                            }
+                        }
+                    }
 
                 path_item[method_lower] = operation
 
