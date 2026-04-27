@@ -2,6 +2,20 @@
 
 BustAPI provides automatic OpenAPI (Swagger) and ReDoc documentation for your application via the `BustAPIDocs` extension. It extracts information from route signatures, docstrings, and parameter validators.
 
+## Comparison with FastAPI
+
+BustAPI's documentation system is designed to be familiar to FastAPI users while leveraging BustAPI's high-performance Rust backend.
+
+| Feature | FastAPI | BustAPI |
+|:---|:---|:---|
+| **Engine** | Starlette / Pydantic | **Actix-web / Rust-core** |
+| **Setup** | Automatic in `FastAPI()` | Manual via `BustAPIDocs(app)` |
+| **Parameters** | `Query()`, `Path()`, `Body()` | `Query()`, `Path()`, `Body()` |
+| **Validation** | Pydantic Models | `Struct` or `dict` schemas |
+| **UI Endpoints** | `/docs`, `/redoc` | `/docs`, `/redoc` |
+| **Metadata** | `tags`, `summary`, `description` | `tags`, `summary`, `description` |
+| **Performance** | High (Python-based) | **Extreme (Rust-core parsing)** |
+
 ## Basic Setup
 
 Initialize the `BustAPIDocs` extension with your application to enable the documentation endpoints.
