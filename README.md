@@ -442,13 +442,13 @@ CMD ["python", "app.py"]
 
 ## 📖 Documentation
 
-📚 **[Full Documentation](https://grandpaej.github.io/BustAPI/)**
+📚 **[Full Documentation](https://RUSTxPY.github.io/BustAPI/)**
 
-- [Getting Started](https://grandpaej.github.io/BustAPI/quickstart/)
-- [Routing Guide](https://grandpaej.github.io/BustAPI/user-guide/routing/)
-- [JWT Authentication](https://grandpaej.github.io/BustAPI/user-guide/jwt/)
-- [WebSocket Guide](https://grandpaej.github.io/BustAPI/user-guide/websocket/)
-- [API Reference](https://grandpaej.github.io/BustAPI/api-reference/)
+- [Getting Started](https://RUSTxPY.github.io/BustAPI/quickstart/)
+- [Routing Guide](https://RUSTxPY.github.io/BustAPI/user-guide/routing/)
+- [JWT Authentication](https://RUSTxPY.github.io/BustAPI/user-guide/jwt/)
+- [WebSocket Guide](https://RUSTxPY.github.io/BustAPI/user-guide/websocket/)
+- [API Reference](https://RUSTxPY.github.io/BustAPI/api-reference/)
 
 ---
 
@@ -464,8 +464,8 @@ We welcome contributions! Here's how:
 
 Found a bug? Have a feature request?
 
-- [Open an Issue](https://github.com/GrandpaEJ/bustapi/issues)
-- [Start a Discussion](https://github.com/GrandpaEJ/bustapi/discussions)
+- [Open an Issue](https://github.com/RUSTxPY/BustAPI/issues)
+- [Start a Discussion](https://github.com/RUSTxPY/BustAPI/discussions)
 
 ---
 

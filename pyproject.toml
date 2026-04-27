@@ -85,10 +85,10 @@ full = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/GrandpaEJ/bustapi"
-Documentation = "https://grandpaej.github.io/BustAPI/"
-Repository = "https://github.com/GrandpaEJ/bustapi.git"
-Issues = "https://github.com/GrandpaEJ/bustapi/issues"
+Homepage = "https://github.com/RUSTxPY/BustAPI"
+Documentation = "https://RUSTxPY.github.io/BustAPI/"
+Repository = "https://github.com/RUSTxPY/BustAPI.git"
+Issues = "https://github.com/RUSTxPY/BustAPI/issues"
 
 [project.scripts]
 bustapi = "bustapi.cli.main:main"
