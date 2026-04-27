@@ -140,6 +140,7 @@ pub struct Router {
     pub(crate) routes: HashMap<(Method, String), Arc<dyn RouteHandler>>,
     pub(crate) middleware: Vec<Arc<dyn super::middleware::Middleware>>,
     pub(crate) redirect_slashes: bool,
+    pub not_found_handler: Option<Arc<dyn RouteHandler>>,
 }
 
 impl Router {
@@ -151,6 +152,7 @@ impl Router {
             routes: HashMap::new(),
             middleware: Vec::new(),
             redirect_slashes: true,
+            not_found_handler: None,
         }
     }
 
@@ -239,7 +241,11 @@ impl Router {
         } else {
             // Not found - check for redirect if enabled
             self.try_redirect(&req_data).unwrap_or_else(|| {
-                ResponseData::error(http::StatusCode::NOT_FOUND, Some("Not Found"))
+                if let Some(ref handler) = self.not_found_handler {
+                    handler.handle(req_data.clone())
+                } else {
+                    ResponseData::error(http::StatusCode::NOT_FOUND, Some("Not Found"))
+                }
             })
         };
 

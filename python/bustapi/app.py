@@ -166,6 +166,9 @@ class BustAPI(
         self._rust_app = None
         self._init_rust_backend()
 
+        # Register default 404 fallback
+        self._rust_app.set_not_found_handler(self._dispatch_not_found)
+
     def _init_rust_backend(self):
         """Initialize the Rust backend application."""
         try:
@@ -260,13 +263,45 @@ class BustAPI(
             if isinstance(exc_class_or_code, type) and isinstance(
                 exception, exc_class_or_code
             ):
-                return self._make_response(handler(exception))
+                rv = handler(exception)
+                return (
+                    self._make_response(*rv)
+                    if isinstance(rv, tuple)
+                    else self._make_response(rv)
+                )
             elif isinstance(exc_class_or_code, int):
                 if hasattr(exception, "code") and exception.code == exc_class_or_code:
-                    return self._make_response(handler(exception))
+                    rv = handler(exception)
+                    return (
+                        self._make_response(*rv)
+                        if isinstance(rv, tuple)
+                        else self._make_response(rv)
+                    )
 
         status = getattr(exception, "code", 500) if hasattr(exception, "code") else 500
         return Response(f"Internal Server Error: {str(exception)}", status=status)
+
+    def _dispatch_not_found(self, rust_request, params=None):
+        """Internal handler called by Rust when no route matches."""
+        from .core.exceptions import NotFound
+
+        # Create request context if not already present
+        # This is needed because this might be called directly from Rust
+        # without going through the usual wrapper if it's a 404
+        try:
+            request = Request._from_rust_request(rust_request)
+            request.app = self
+            token = _request_ctx.set(request)
+
+            try:
+                # Handle via the normal exception handling logic
+                response = self._handle_exception(NotFound())
+                return self._response_to_rust_format(response)
+            finally:
+                _request_ctx.reset(token)
+        except Exception as e:
+            self.logger.error(f"Error in 404 fallback: {e}")
+            return ("Not Found", 404, {"Content-Type": "text/plain"})
 
     def _response_to_rust_format(self, response: Response) -> Union[tuple, Response]:
         """Convert Python Response object to format expected by Rust."""

@@ -281,14 +281,24 @@ def make_response(*args) -> Response:
         rv, status_or_headers = args
         if isinstance(status_or_headers, (int, str)):
             # (response, status)
+            if isinstance(rv, Response):
+                rv.status_code = int(status_or_headers)
+                return rv
             return Response(rv, status=status_or_headers)
         else:
             # (response, headers)
+            if isinstance(rv, Response):
+                rv.headers.update(status_or_headers)
+                return rv
             return Response(rv, headers=status_or_headers)
 
     if len(args) == 3:
         # (response, status, headers)
         rv, status, headers = args
+        if isinstance(rv, Response):
+            rv.status_code = int(status)
+            rv.headers.update(headers)
+            return rv
         return Response(rv, status=status, headers=headers)
 
     raise TypeError(f"make_response() takes 1 to 3 arguments ({len(args)} given)")

@@ -277,6 +277,19 @@ impl PyBustApp {
         Ok(())
     }
 
+    /// Set a fallback handler for 404 Not Found errors
+    pub fn set_not_found_handler(&self, handler: Py<PyAny>) -> PyResult<()> {
+        let py_handler = crate::bindings::handlers::PyRouteHandler::new(handler);
+        let state = self.state.clone();
+
+        self.runtime.block_on(async {
+            let mut routes = state.routes.write().await;
+            routes.not_found_handler = Some(Arc::new(py_handler));
+        });
+
+        Ok(())
+    }
+
     /// Run the server
     pub fn run(
         &self,
