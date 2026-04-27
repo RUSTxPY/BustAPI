@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented here.
 
+## [0.12.0] - 2026-04-27
+
+### Added
+- **Auto DOCS Enhancements**:
+  - **Path Merging**: Multiple HTTP methods (e.g., GET and POST) on the same path are now correctly merged in OpenAPI documentation.
+  - **Rich Schema Extraction**: Added support for `Body(..., schema={...})` and `Query(...)` parameters. OpenAPI documentation now includes property descriptions, examples, and validation constraints.
+  - **Standardized Types**: Improved mapping of internal types to standard OpenAPI types (integer, string, boolean, etc.).
+
+### Fixed
+- **Hot-Reload Stability**: Fixed an infinite restart loop in the file watcher by ignoring noisy directories (`__pycache__`, `.git`, `.venv`) and filtering by file extension.
+- **Custom Error Handlers** ([#18](https://github.com/RUSTxPY/BustAPI/issues/18)): Fixed a bug where custom 404 error handlers were ignored by the Rust backend.
+- **Response Formatting**: Fixed a bug where pre-formatted response objects returned in tuples were being incorrectly stringified.
+
 ## [0.11.1] - 2026-04-23
 
 ### Added
