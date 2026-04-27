@@ -2,6 +2,7 @@
 Authentication decorators for route protection.
 """
 
+import inspect
 from functools import wraps
 from typing import Callable, Iterable, Optional, Union
 
@@ -16,6 +17,28 @@ def login_required(fn: Callable) -> Callable:
         def dashboard():
             return f"Hello, {current_user.name}!"
     """
+
+    if inspect.iscoroutinefunction(fn):
+
+        @wraps(fn)
+        async def async_wrapper(*args, **kwargs):
+            from ..core.exceptions import abort
+            from .login import current_user
+
+            if not current_user.is_authenticated:
+                from ..http.request import request
+
+                login_manager = getattr(
+                    getattr(request, "_app", None), "login_manager", None
+                )
+                if login_manager and login_manager.login_view:
+                    from ..core.helpers import redirect, url_for
+
+                    return redirect(url_for(login_manager.login_view))
+                abort(401, "Login required")
+            return await fn(*args, **kwargs)
+
+        return async_wrapper
 
     @wraps(fn)
     def wrapper(*args, **kwargs):

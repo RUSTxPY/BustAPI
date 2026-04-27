@@ -60,8 +60,10 @@ class LoginManager:
         self._user_loader_callback = callback
         return callback
 
-    def _load_user(self) -> None:
+    async def _load_user(self) -> None:
         """Load user from session on each request."""
+        import inspect
+
         from ..http.request import request, session
 
         # Default to anonymous
@@ -79,6 +81,9 @@ class LoginManager:
 
         # Load user via callback
         user = self._user_loader_callback(user_id)
+        if inspect.isawaitable(user):
+            user = await user
+
         if user is not None:
             request._login_user = user
             request._login_fresh = session.get(self.fresh_key, False)

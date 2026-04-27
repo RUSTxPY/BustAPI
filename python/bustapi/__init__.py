@@ -94,6 +94,7 @@ from .security.rate_limit import RateLimit
 
 # Import testing utilities
 from .testing.client import BustTestClient
+from .utils import async_to_sync, get_event_loop
 
 __all__ = [
     "BustAPI",
@@ -170,6 +171,8 @@ __all__ = [
     "WebSocketHandler",
     "WebSocketConnection",
     "WebSocketConfig",
+    "async_to_sync",
+    "get_event_loop",
 ]
 
 # Convenience imports for common use cases

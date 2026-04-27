@@ -2,7 +2,10 @@
 Hook decorators and lifecycle management for BustAPI.
 """
 
+import inspect
 from typing import Callable, Type, Union
+
+from .utils import async_to_sync
 
 
 class RequestLifecycle:
@@ -81,24 +84,33 @@ class RequestLifecycle:
         """Preprocess request - runs before_request functions."""
         for func in self.before_request_funcs:
             result = func()
+            if inspect.isawaitable(result):
+                result = async_to_sync(result)
             if result is not None:
                 return result
 
     def process_response(self, response):
         """Process response - runs after_request functions."""
         for func in self.after_request_funcs:
-            response = func(response)
+            res = func(response)
+            if inspect.isawaitable(res):
+                res = async_to_sync(res)
+            response = res or response
         return response
 
     def do_teardown_request(self, exc=None):
         """Teardown request - runs teardown_request functions."""
         for func in self.teardown_request_funcs:
-            func(exc)
+            res = func(exc)
+            if inspect.isawaitable(res):
+                async_to_sync(res)
 
     def do_teardown_appcontext(self, exc=None):
         """Teardown app context - runs teardown_appcontext functions."""
         for func in self.teardown_appcontext_funcs:
-            func(exc)
+            res = func(exc)
+            if inspect.isawaitable(res):
+                async_to_sync(res)
 
     def make_default_options_response(self):
         """Make default OPTIONS response."""

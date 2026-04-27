@@ -3,6 +3,7 @@ Testing utilities for BustAPI - Flask-compatible test client
 """
 
 import json as json_module
+from contextlib import contextmanager
 from typing import Any, Dict, Optional, Union
 from urllib.parse import urlencode
 
@@ -379,6 +380,41 @@ class BustTestClient:
         # Cleanup if needed
         self.cookie_jar.clear()
 
+    @contextmanager
+    def session_transaction(self):
+        """
+        Context manager to access and modify the session in tests.
+        """
+        app = self.application
+        if not app.secret_key:
+            raise RuntimeError("Sessions require a secret_key")
+
+        # Create a mock request to open the session
+        headers = {}
+        if self.use_cookies and self.cookie_jar:
+            cookie_header = "; ".join([f"{k}={v}" for k, v in self.cookie_jar.items()])
+            headers["Cookie"] = cookie_header
+
+        from ..http.request import Request
+
+        mock_req = Request._from_rust_request(MockRequest("GET", "/", headers, b""))
+        mock_req.app = app
+
+        session = app.session_interface.open_session(app, mock_req)
+
+        yield session
+
+        # Save session back to cookie jar
+        if session.modified:
+            from ..http.response import Response
+
+            resp = Response(b"")
+            app.session_interface.save_session(app, session, resp)
+
+            # Extract set-cookie from resp
+            if "Set-Cookie" in resp.headers:
+                self._update_cookies(resp.headers["Set-Cookie"])
+
 
 class MockRequest:
     """
@@ -401,6 +437,20 @@ class MockRequest:
             )
         else:
             self.query_params = {}
+
+    @property
+    def cookies(self) -> Dict[str, str]:
+        """Parsed cookies from header."""
+        cookie_header = self.get_header("Cookie")
+        if not cookie_header:
+            return {}
+
+        cookies = {}
+        for part in cookie_header.split(";"):
+            if "=" in part:
+                k, v = part.strip().split("=", 1)
+                cookies[k] = v
+        return cookies
 
     def get_header(self, name: str) -> Optional[str]:
         """Get header value (case-insensitive)."""

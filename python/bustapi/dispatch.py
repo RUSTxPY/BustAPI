@@ -8,6 +8,7 @@ from functools import wraps
 from typing import TYPE_CHECKING, Callable
 
 from .http.request import Request, _request_ctx
+from .utils import async_to_sync
 
 if TYPE_CHECKING:
     from .app import BustAPI
@@ -123,6 +124,8 @@ def create_sync_wrapper(app: "BustAPI", handler: Callable, rule: str) -> Callabl
             if app.before_request_funcs:
                 for before_func in app.before_request_funcs:
                     res = before_func()
+                    if inspect.isawaitable(res):
+                        res = async_to_sync(res)
                     if res is not None:
                         response = app._make_response(res)
                         if session:
@@ -253,7 +256,10 @@ def create_sync_wrapper(app: "BustAPI", handler: Callable, rule: str) -> Callabl
                 response = app.middleware_manager.process_response(request, response)
             if app.after_request_funcs:
                 for after_func in app.after_request_funcs:
-                    response = after_func(response) or response
+                    res = after_func(response)
+                    if inspect.isawaitable(res):
+                        res = async_to_sync(res)
+                    response = res or response
             if session is not None:
                 app.session_interface.save_session(app, session, response)
 
@@ -265,7 +271,9 @@ def create_sync_wrapper(app: "BustAPI", handler: Callable, rule: str) -> Callabl
             if app.teardown_request_funcs:
                 for f in app.teardown_request_funcs:
                     try:
-                        f(None)
+                        res = f(None)
+                        if inspect.isawaitable(res):
+                            async_to_sync(res)
                     except:
                         pass
             _request_ctx.reset(token)
@@ -274,7 +282,7 @@ def create_sync_wrapper(app: "BustAPI", handler: Callable, rule: str) -> Callabl
 
 
 def create_async_wrapper(app: "BustAPI", handler: Callable, rule: str) -> Callable:
-    """Wrap asynchronous handler; executed synchronously via asyncio.run for now."""
+    """Wrap asynchronous handler; returns a sync wrapper that uses async_to_sync."""
 
     # Inspect handler signature to filter kwargs later
     try:
@@ -284,87 +292,80 @@ def create_async_wrapper(app: "BustAPI", handler: Callable, rule: str) -> Callab
         )
         expected_args = set(sig.parameters.keys())
     except (ValueError, TypeError):
-        # Fallback for builtins or weird callables
         has_kwargs = True
         expected_args = set()
 
     @wraps(handler)
-    async def wrapper(rust_request):
-        try:
+    def wrapper(rust_request):
+        async def run_logic():
             request = Request._from_rust_request(rust_request)
             request.app = app
             token = _request_ctx.set(request)
 
-            session = None
-            if app.secret_key:
-                session = app.session_interface.open_session(app, request)
-                request.session = session
+            try:
+                session = None
+                if app.secret_key:
+                    session = app.session_interface.open_session(app, request)
+                    request.session = session
 
-            if app.before_request_funcs:
-                for before_func in app.before_request_funcs:
-                    res = before_func()
-                    if res is not None:
-                        response = app._make_response(res)
-                        if session:
-                            app.session_interface.save_session(app, session, response)
-                        _request_ctx.reset(token)
-                        return app._response_to_rust_format(response)
+                if app.before_request_funcs:
+                    for before_func in app.before_request_funcs:
+                        res = before_func()
+                        if inspect.isawaitable(res):
+                            res = await res
+                        if res is not None:
+                            response = app._make_response(res)
+                            if session:
+                                app.session_interface.save_session(
+                                    app, session, response
+                                )
+                            return response
 
-            if app.middleware_manager.middlewares:
-                mw_response = app.middleware_manager.process_request(request)
-                if mw_response:
-                    response = mw_response
-                else:
-                    args, kwargs = app._extract_path_params(
-                        rule, request.method, request.path
-                    )
-                    kwargs.update(app._extract_query_params(rule, request))
-                    if request.method in ("POST", "PUT", "PATCH"):
-                        kwargs.update(app._extract_body_params(rule, request))
-
-                    dep_kwargs, dep_cache = await app._resolve_dependencies_async(
-                        rule, request.method, kwargs
-                    )
-                    kwargs.update(dep_kwargs)
-
-                    for name in expected_args:
-                        if name not in kwargs and name in request.args:
-                            kwargs[name] = request.args.get(name)
-
-                    # Inject request object if handler expects it
-                    if "request" in expected_args:
-                        kwargs["request"] = request
-
-                    call_kwargs = (
-                        kwargs
-                        if has_kwargs
-                        else {k: v for k, v in kwargs.items() if k in expected_args}
-                    )
-
-                    try:
-                        result = await handler(**call_kwargs)
-                    finally:
-                        if dep_cache:
-                            await dep_cache.cleanup()
-
-                    response = (
-                        app._make_response(result)
-                        if not isinstance(result, tuple)
-                        else app._make_response(*result)
-                    )
-            else:
-                if "<" not in rule and not expected_args:
-                    result = await handler()
-                    dep_cache = None
-                else:
-                    if "<" not in rule:
-                        kwargs = app._extract_query_params(rule, request)
+                if app.middleware_manager.middlewares:
+                    mw_response = app.middleware_manager.process_request(request)
+                    if mw_response:
+                        response = mw_response
+                    else:
+                        args, kwargs = app._extract_path_params(
+                            rule, request.method, request.path
+                        )
+                        kwargs.update(app._extract_query_params(rule, request))
                         if request.method in ("POST", "PUT", "PATCH"):
                             kwargs.update(app._extract_body_params(rule, request))
+
                         dep_kwargs, dep_cache = await app._resolve_dependencies_async(
                             rule, request.method, kwargs
                         )
                         kwargs.update(dep_kwargs)
+
+                        for name in expected_args:
+                            if name not in kwargs and name in request.args:
+                                kwargs[name] = request.args.get(name)
+
+                        if "request" in expected_args:
+                            kwargs["request"] = request
+
+                        call_kwargs = (
+                            kwargs
+                            if has_kwargs
+                            else {k: v for k, v in kwargs.items() if k in expected_args}
+                        )
+
+                        try:
+                            result = await handler(**call_kwargs)
+                        finally:
+                            if dep_cache:
+                                await dep_cache.cleanup()
+
+                        response = (
+                            app._make_response(result)
+                            if not isinstance(result, tuple)
+                            else app._make_response(*result)
+                        )
+                else:
+                    if "<" not in rule and not expected_args:
+                        result = await handler()
+                        dep_cache = None
                     else:
                         args, kwargs = app._extract_path_params(
                             rule, request.method, request.path
@@ -377,64 +378,64 @@ def create_async_wrapper(app: "BustAPI", handler: Callable, rule: str) -> Callab
                         )
                         kwargs.update(dep_kwargs)
 
-                    for name in expected_args:
-                        if name not in kwargs and name in request.args:
-                            kwargs[name] = request.args.get(name)
+                        for name in expected_args:
+                            if name not in kwargs and name in request.args:
+                                kwargs[name] = request.args.get(name)
 
-                    # Inject request object if handler expects it
-                    if "request" in expected_args:
-                        kwargs["request"] = request
+                        if "request" in expected_args:
+                            kwargs["request"] = request
 
-                    call_kwargs = (
-                        kwargs
-                        if has_kwargs
-                        else {k: v for k, v in kwargs.items() if k in expected_args}
+                        call_kwargs = (
+                            kwargs
+                            if has_kwargs
+                            else {k: v for k, v in kwargs.items() if k in expected_args}
+                        )
+
+                        try:
+                            result = await handler(**call_kwargs)
+                        finally:
+                            if dep_cache:
+                                await dep_cache.cleanup()
+
+                    response = (
+                        app._make_response(result)
+                        if not isinstance(result, tuple)
+                        else app._make_response(*result)
                     )
 
-                    try:
-                        result = await handler(**call_kwargs)
-                    finally:
-                        if dep_cache:
-                            await dep_cache.cleanup()
+                if app.middleware_manager.middlewares:
+                    response = app.middleware_manager.process_response(
+                        request, response
+                    )
+                if app.after_request_funcs:
+                    for after_func in app.after_request_funcs:
+                        res = after_func(response)
+                        if inspect.isawaitable(res):
+                            res = await res
+                        response = res or response
+                if session is not None:
+                    app.session_interface.save_session(app, session, response)
 
-                if session is None and not app.after_request_funcs:
-                    if isinstance(result, (dict, list, str, bytes)):
-                        ct = (
-                            "application/json"
-                            if isinstance(result, (dict, list))
-                            else (
-                                "text/html"
-                                if isinstance(result, str)
-                                else "application/octet-stream"
-                            )
-                        )
-                        return (result, 200, {"Content-Type": ct})
+                return response
 
-                response = (
-                    app._make_response(result)
-                    if not isinstance(result, tuple)
-                    else app._make_response(*result)
-                )
+            except Exception as e:
+                return app._handle_exception(e)
+            finally:
+                if app.teardown_request_funcs:
+                    for f in app.teardown_request_funcs:
+                        try:
+                            res = f(None)
+                            if inspect.isawaitable(res):
+                                await res
+                        except:
+                            pass
+                _request_ctx.reset(token)
 
-            if app.middleware_manager.middlewares:
-                response = app.middleware_manager.process_response(request, response)
-            if app.after_request_funcs:
-                for after_func in app.after_request_funcs:
-                    response = after_func(response) or response
-            if session is not None:
-                app.session_interface.save_session(app, session, response)
-
+        try:
+            response = async_to_sync(run_logic())
             return app._response_to_rust_format(response)
-
         except Exception as e:
+            # This handles exceptions outside the run_logic (unlikely)
             return app._response_to_rust_format(app._handle_exception(e))
-        finally:
-            if app.teardown_request_funcs:
-                for f in app.teardown_request_funcs:
-                    try:
-                        f(None)
-                    except:
-                        pass
-            _request_ctx.reset(token)
 
     return wrapper
