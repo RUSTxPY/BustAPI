@@ -326,32 +326,68 @@ class BustAPIDocs:
                 # Extract query parameters
                 query_vals = self.app.query_validators.get((rule, method))
                 if query_vals:
+                    from ..params import Query
+
                     if "parameters" not in operation:
                         operation["parameters"] = []
                     for q_name, (q_default, q_anno) in query_vals.items():
-                        q_type = "string"
-                        if q_anno is int:
-                            q_type = "integer"
-                        elif q_anno is float:
-                            q_type = "number"
-                        elif q_anno is bool:
-                            q_type = "boolean"
+                        if isinstance(q_default, Query):
+                            q_type = "string"
+                            if q_anno is int:
+                                q_type = "integer"
+                            elif q_anno is float:
+                                q_type = "number"
+                            elif q_anno is bool:
+                                q_type = "boolean"
 
-                        operation["parameters"].append(
-                            {
-                                "name": q_name,
-                                "in": "query",
-                                "required": q_default is inspect.Parameter.empty,
-                                "schema": {"type": q_type},
-                            }
-                        )
+                            param_obj = q_default.to_openapi_parameter(
+                                q_name,
+                                q_type,
+                                required=q_default.default is inspect.Parameter.empty,
+                            )
+                            operation["parameters"].append(param_obj)
+                        else:
+                            q_type = "string"
+                            if q_anno is int:
+                                q_type = "integer"
+                            elif q_anno is float:
+                                q_type = "number"
+                            elif q_anno is bool:
+                                q_type = "boolean"
+
+                            operation["parameters"].append(
+                                {
+                                    "name": q_name,
+                                    "in": "query",
+                                    "required": q_default is inspect.Parameter.empty,
+                                    "schema": {"type": q_type},
+                                }
+                            )
 
                 # Extract request body
                 body_vals = self.app.body_validators.get((rule, method))
                 if body_vals:
-                    # Check if single Struct parameter
+                    from ..params import Body
+
+                    # Check if single Struct or Body parameter
                     if len(body_vals) == 1:
                         b_name, (b_default, b_anno) = list(body_vals.items())[0]
+
+                        # Handle Body objects
+                        if isinstance(b_default, Body):
+                            schema_ref = b_default.to_json_schema()
+                            operation["requestBody"] = {
+                                "required": b_default.default
+                                is inspect.Parameter.empty,
+                                "content": {"application/json": {"schema": schema_ref}},
+                            }
+                            if b_default.description:
+                                operation["requestBody"][
+                                    "description"
+                                ] = b_default.description
+                            path_item[method_lower] = operation
+                            continue
+
                         try:
                             from ..safe.types import Struct
 
@@ -372,19 +408,25 @@ class BustAPIDocs:
                     props = {}
                     required_props = []
                     for b_name, (b_default, b_anno) in body_vals.items():
-                        b_type_str = "string"
-                        if b_anno is int:
-                            b_type_str = "integer"
-                        elif b_anno is float:
-                            b_type_str = "number"
-                        elif b_anno is bool:
-                            b_type_str = "boolean"
-                        elif hasattr(b_anno, "__annotations__"):
-                            b_type_str = "object"
+                        if isinstance(b_default, Body):
+                            prop = b_default.to_json_schema()
+                            props[b_name] = prop
+                            if b_default.default is inspect.Parameter.empty:
+                                required_props.append(b_name)
+                        else:
+                            b_type_str = "string"
+                            if b_anno is int:
+                                b_type_str = "integer"
+                            elif b_anno is float:
+                                b_type_str = "number"
+                            elif b_anno is bool:
+                                b_type_str = "boolean"
+                            elif hasattr(b_anno, "__annotations__"):
+                                b_type_str = "object"
 
-                        props[b_name] = {"type": b_type_str}
-                        if b_default is inspect.Parameter.empty:
-                            required_props.append(b_name)
+                            props[b_name] = {"type": b_type_str}
+                            if b_default is inspect.Parameter.empty:
+                                required_props.append(b_name)
 
                     schema_ref = {"type": "object", "properties": props}
                     if required_props:
@@ -398,7 +440,10 @@ class BustAPIDocs:
                 path_item[method_lower] = operation
 
             if path_item:
-                schema["paths"][openapi_path] = path_item
+                if openapi_path in schema["paths"]:
+                    schema["paths"][openapi_path].update(path_item)
+                else:
+                    schema["paths"][openapi_path] = path_item
 
         self._schema_cache = schema
         return schema

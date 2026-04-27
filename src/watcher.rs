@@ -31,13 +31,27 @@ pub fn enable_hot_reload(path_str: String) {
                     paths,
                     ..
                 })) => {
-                    // Filter out non-python files if needed, but for now watch all
-                    // Simple debounce: Wait a bit to avoid multiple restarts for one save
+                    // Filter out noise and irrelevant files
                     if let Some(path) = paths.first() {
-                        println!("Using: {}", path.display());
+                        let path_str = path.to_string_lossy();
+                        if path_str.contains("__pycache__")
+                            || path_str.contains(".git")
+                            || path_str.contains(".venv")
+                            || path_str.contains(".egg-info")
+                        {
+                            continue;
+                        }
+
+                        // Check extension
+                        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                        if !["py", "rs", "html", "css", "js", "json", "toml"].contains(&ext) {
+                            continue;
+                        }
+
+                        println!("Using: {}", path_str);
+                        println!("🔄 Restarting...");
+                        restart_process();
                     }
-                    println!("🔄 Restarting...");
-                    restart_process();
                 }
                 Ok(Err(e)) => eprintln!("watch error: {:?}", e),
                 Err(e) => eprintln!("watch channel error: {:?}", e),

@@ -148,7 +148,16 @@ class Path:
         Returns:
             JSON Schema dictionary compatible with OpenAPI 3.0
         """
-        schema: Dict[str, Any] = {"type": param_type}
+        # Map Python types to OpenAPI types
+        type_map = {
+            "int": "integer",
+            "float": "number",
+            "number": "number",
+            "str": "string",
+            "string": "string",
+        }
+        actual_type = type_map.get(param_type, param_type)
+        schema: Dict[str, Any] = {"type": actual_type}
 
         # Add title and description
         if self.title:
@@ -412,7 +421,18 @@ class Query:
         Returns:
             JSON Schema dictionary compatible with OpenAPI 3.0
         """
-        schema: Dict[str, Any] = {"type": param_type}
+        # Map Python types to OpenAPI types
+        type_map = {
+            "int": "integer",
+            "float": "number",
+            "number": "number",
+            "str": "string",
+            "string": "string",
+            "bool": "boolean",
+            "boolean": "boolean",
+        }
+        actual_type = type_map.get(param_type, param_type)
+        schema: Dict[str, Any] = {"type": actual_type}
 
         # Add title and description
         if self.title:
@@ -730,7 +750,20 @@ class Body:
                     continue
 
                 field_type = field_schema.get("type", "string")
-                prop = {"type": field_type}
+                # Map Python types to OpenAPI types
+                type_map = {
+                    "int": "integer",
+                    "float": "number",
+                    "number": "number",
+                    "str": "string",
+                    "string": "string",
+                    "bool": "boolean",
+                    "boolean": "boolean",
+                    "dict": "object",
+                    "list": "array",
+                }
+                actual_type = type_map.get(field_type, field_type)
+                prop = {"type": actual_type}
 
                 if "description" in field_schema:
                     prop["description"] = field_schema["description"]
