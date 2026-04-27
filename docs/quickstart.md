@@ -157,4 +157,8 @@ if __name__ == "__main__":
 
     Secure your API with tokens.
 
+-   [:material-book-open: **Auto-Docs**](user-guide/documentation.md)
+
+    Interactive Swagger & ReDoc UI.
+
 </div>

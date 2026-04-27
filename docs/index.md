@@ -44,7 +44,8 @@ if __name__ == "__main__":
 - **Multiprocessing** - `workers=4` for parallel request handling on Linux
 - **JWT Authentication** - Built-in token-based auth
 - **Templates** - Jinja2 template rendering
-- **Blueprints** - Modular app organization
+-   **Blueprints** - Modular app organization
+-   **Auto-Documentation** - Instant OpenAPI/Swagger & ReDoc UI
 
 ---
 
@@ -79,3 +80,4 @@ Supports Python **3.10 - 3.14** on Linux, macOS, and Windows.
 - [Turbo Routes](user-guide/turbo-routes.md) - Maximum performance
 - [Multiprocessing](user-guide/multiprocessing.md) - Scale to 100k+ RPS
 - [JWT Auth](user-guide/jwt.md) - Secure your API
+- [Auto-Documentation](user-guide/documentation.md) - Swagger & ReDoc
