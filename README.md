@@ -469,14 +469,6 @@ Found a bug? Have a feature request?
 
 ---
 
-## 💰 Support
-
-If BustAPI helps your project, consider supporting its development:
-
-**Binance ID:** `1010167458`
-
----
-
 ## 🌠 Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=RUSTxPY/BustAPI&type=Date)](https://www.star-history.com/#RUSTxPY/BustAPI&Date)
