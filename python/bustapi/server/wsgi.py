@@ -2,8 +2,12 @@
 WSGI and ASGI adapters for BustAPI.
 """
 
+import inspect
+import re
 from functools import partial
 from http import HTTPStatus
+from typing import Any, Dict, List, Optional, Tuple, Union
+from urllib.parse import parse_qs
 
 
 class WSGIAdapter:
@@ -39,19 +43,36 @@ class WSGIAdapter:
             if stream:
                 body = stream.read(content_length)
 
-        # Call Rust backend
-        body_str, status_code, headers_map = self._rust_app.handle_request(
-            method, path, query_string, headers, body
-        )
+        # Call Rust backend - This ensures all routing and error handling
+        # (including custom 404 handlers) are handled consistently by the core.
+        try:
+            result = self._rust_app.handle_request(
+                method, path, query_string, headers, body
+            )
+            body_resp, status_code, headers_map = result
+        except Exception as e:
+            # Fallback for unexpected errors in the bridge
+            import traceback
+
+            traceback.print_exc()
+            body_resp = "Internal Server Error"
+            status_code = 500
+            headers_map = {"Content-Type": "text/plain"}
 
         # Convert status code to string
         status_line = f"{status_code} {self._get_status_text(status_code)}"
 
-        # Convert headers
-        response_headers = list(headers_map.items())
+        # Convert headers - handle both dict and list of tuples
+        if hasattr(headers_map, "items"):
+            response_headers = [(str(k), str(v)) for k, v in headers_map.items()]
+        else:
+            response_headers = [(str(k), str(v)) for k, v in headers_map]
 
         start_response(status_line, response_headers)
-        return [body_str.encode("utf-8")]
+
+        if isinstance(body_resp, bytes):
+            return [body_resp]
+        return [str(body_resp).encode("utf-8")]
 
     def _get_status_text(self, code):
         """Get HTTP status text for code."""
@@ -97,22 +118,32 @@ class WSGIAdapter:
         )
 
         # Send response start
+        headers_list = []
+        if hasattr(headers_map, "items"):
+            for k, v in headers_map.items():
+                headers_list.append((str(k).encode("utf-8"), str(v).encode("utf-8")))
+        else:
+            for k, v in headers_map:
+                headers_list.append((str(k).encode("utf-8"), str(v).encode("utf-8")))
+
         await send(
             {
                 "type": "http.response.start",
                 "status": status_code,
-                "headers": [
-                    (k.encode("utf-8"), v.encode("utf-8"))
-                    for k, v in headers_map.items()
-                ],
+                "headers": headers_list,
             }
         )
 
         # Send response body
+        if isinstance(body_str, bytes):
+            body_bytes = body_str
+        else:
+            body_bytes = str(body_str).encode("utf-8")
+
         await send(
             {
                 "type": "http.response.body",
-                "body": body_str.encode("utf-8"),
+                "body": body_bytes,
             }
         )
 
@@ -125,4 +156,4 @@ class WSGIAdapter:
             return self.wsgi_app(scope_or_environ, start_response)
         else:
             # For ASGI, users should use app.asgi_app directly
-            return self.wsgi_app(scope_or_environ, start_response)
+            return self.asgi_app(scope_or_environ, start_response)

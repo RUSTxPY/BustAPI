@@ -288,7 +288,7 @@ pub async fn handle_request(
         let mut builder = HttpResponse::build(response_data.status);
 
         for (k, v) in response_data.headers {
-            builder.insert_header((k.as_str(), v.as_str()));
+            builder.append_header((k.as_str(), v.as_str()));
         }
 
         if state.debug.load(Ordering::Relaxed) {
@@ -316,7 +316,7 @@ pub async fn handle_request(
 
                     // Apply custom headers from ResponseData
                     for (k, v) in response_data.headers {
-                        response.headers_mut().insert(
+                        response.headers_mut().append(
                             actix_web::http::header::HeaderName::from_bytes(k.as_bytes()).unwrap(),
                             actix_web::http::header::HeaderValue::from_str(&v).unwrap(),
                         );
@@ -353,7 +353,7 @@ pub async fn handle_request(
     let mut builder = HttpResponse::build(response_data.status);
 
     for (k, v) in response_data.headers {
-        builder.insert_header((k.as_str(), v.as_str()));
+        builder.append_header((k.as_str(), v.as_str()));
     }
 
     if state.debug.load(Ordering::Relaxed) {

@@ -1,8 +1,5 @@
 """
 BustAPI Application class - Flask-compatible web framework
-
-This is the main application class that coordinates all components.
-Mixins are used to keep the codebase modular and maintainable.
 """
 
 import inspect
@@ -35,15 +32,6 @@ class BustAPI(
 ):
     """
     Flask-compatible application class built on Rust backend.
-
-    Example:
-        app = BustAPI()
-
-        @app.route('/')
-        def hello():
-            return 'Hello, World!'
-
-        app.run()
     """
 
     def __init__(
@@ -56,21 +44,9 @@ class BustAPI(
         root_path: Optional[str] = None,
         redirect_slashes: bool = True,
     ):
-        """
-        Initialize BustAPI application.
-
-        Args:
-            import_name: Name of the application package
-            static_url_path: URL path for static files
-            static_folder: Filesystem path to static files
-            template_folder: Filesystem path to templates
-            instance_relative_config: Enable instance relative config
-            root_path: Root path for the application
-        """
         if import_name is None:
             import inspect
 
-            # Auto-detect the caller's module name
             frame = inspect.stack()[1]
             module = inspect.getmodule(frame[0])
             import_name = module.__name__ if module else self.__class__.__module__
@@ -97,14 +73,8 @@ class BustAPI(
 
         self.instance_relative_config = instance_relative_config
         self.redirect_slashes = redirect_slashes
-
-        # Configuration dictionary
         self.config: Dict[str, Any] = {}
-
-        # Extension registry
         self.extensions: Dict[str, Any] = {}
-
-        # View functions registry
         self.view_functions: Dict[str, Callable] = {}
         self.error_handler_spec: Dict[Union[int, Type[Exception]], Callable] = {}
         self.before_request_funcs: List[Callable] = []
@@ -112,27 +82,19 @@ class BustAPI(
         self.teardown_request_funcs: List[Callable] = []
         self.teardown_appcontext_funcs: List[Callable] = []
         self.blueprints: Dict[str, Blueprint] = {}
-
-        # URL map and rules
         self.url_map: Dict[str, Dict] = {}
         self._url_rules: List[Dict[str, Any]] = []
-
-        # Parameter validation metadata
         self.path_validators: Dict[tuple, Dict[str, Any]] = {}
         self.query_validators: Dict[tuple, Dict[str, tuple]] = {}
         self.body_validators: Dict[tuple, Dict[str, tuple]] = {}
         self.dependencies: Dict[tuple, Dict[str, Any]] = {}
-
-        # Templating
         self.jinja_env = None
 
-        # Initialize logger
         try:
             self.logger = get_logger("bustapi.app")
         except Exception:
             self.logger = None
 
-        # Flask compatibility attributes
         self.debug = False
         self.testing = False
         self.secret_key = None
@@ -158,36 +120,22 @@ class BustAPI(
         self.template_context_processors = {}
         self._template_fragment_cache = None
 
-        # Middleware and Sessions
         self.middleware_manager = MiddlewareManager()
         self.session_interface = SecureCookieSessionInterface()
-
-        # Initialize Rust backend
         self._rust_app = None
         self._init_rust_backend()
-
-        # Register default 404 fallback
         self._rust_app.set_not_found_handler(self._dispatch_not_found)
 
     def _init_rust_backend(self):
-        """Initialize the Rust backend application."""
         try:
             from . import bustapi_core
 
             self._rust_app = bustapi_core.create_app()
-
-            # Register static file handler
-            # print(f"DEBUG: static_folder={self.static_folder}, isdir={os.path.isdir(self.static_folder) if self.static_folder else 'None'}")
             if self.static_folder and os.path.isdir(self.static_folder):
-                # self._rust_app.set_static_folder(self.static_folder)  # Not implemented in Rust
                 static_url = self.static_url_path or "/static"
-                # print(f"DEBUG: Adding static route {static_url} -> {self.static_folder}")
                 self._rust_app.add_static_route(static_url, self.static_folder)
-
-            # Register template folder
             if self.template_folder and os.path.isdir(self.template_folder):
                 self._rust_app.set_template_folder(self.template_folder)
-
         except ImportError as e:
             raise RuntimeError(
                 f"BustAPI requires the Rust backend. Build with: maturin develop\n{e}"
@@ -196,27 +144,13 @@ class BustAPI(
             raise RuntimeError(f"Failed to initialize Rust backend: {e}") from e
 
     def register_blueprint(self, blueprint: Blueprint, **options) -> None:
-        """
-        Register a blueprint with the application.
-
-        Args:
-            blueprint: Blueprint instance to register
-            **options: Additional options for blueprint registration
-        """
         url_prefix = options.get("url_prefix", blueprint.url_prefix)
-
-        # Store blueprint
         self.blueprints[blueprint.name] = blueprint
-
-        # Register blueprint routes with the application
         for rule, endpoint, view_func, methods in blueprint.deferred_functions:
             if url_prefix:
                 rule = url_prefix.rstrip("/") + "/" + rule.lstrip("/")
-
             full_endpoint = f"{blueprint.name}.{endpoint}"
             self.view_functions[full_endpoint] = view_func
-
-            # Register with Rust backend
             for method in methods:
                 if inspect.iscoroutinefunction(view_func):
                     self._rust_app.add_async_route(
@@ -230,35 +164,17 @@ class BustAPI(
     def add_websocket_route(
         self, path: str, handler: Any, config: Optional[Any] = None
     ) -> None:
-        """
-        Add a WebSocket route with a Python handler.
-
-        Args:
-            path: URL path for the WebSocket
-            handler: WebSocketHandler instance
-            config: Optional WebSocketConfig instance
-        """
         self._rust_app.add_websocket_route(path, handler, config)
 
     def add_turbo_websocket_route(
         self, path: str, response_prefix: str, config: Optional[Any] = None
     ) -> None:
-        """
-        Add a Turbo WebSocket route (Pure Rust).
-
-        Args:
-            path: URL path for the WebSocket
-            response_prefix: Prefix to add to echoed messages
-            config: Optional WebSocketConfig instance
-        """
         self._rust_app.add_turbo_websocket_route(path, response_prefix, config)
 
     def _make_response(self, *args) -> Response:
-        """Convert various return types to Response objects."""
         return make_response(*args)
 
     def _handle_exception(self, exception: Exception) -> Response:
-        """Handle exceptions and return appropriate error responses."""
         for exc_class_or_code, handler in self.error_handler_spec.items():
             if isinstance(exc_class_or_code, type) and isinstance(
                 exception, exc_class_or_code
@@ -277,24 +193,20 @@ class BustAPI(
                         if isinstance(rv, tuple)
                         else self._make_response(rv)
                     )
-
         status = getattr(exception, "code", 500) if hasattr(exception, "code") else 500
-        return Response(f"Internal Server Error: {str(exception)}", status=status)
+        try:
+            return Response(f"Internal Server Error: {str(exception)}", status=status)
+        except Exception:
+            return make_response("Internal Server Error", 500)
 
     def _dispatch_not_found(self, rust_request, params=None):
-        """Internal handler called by Rust when no route matches."""
         from .core.exceptions import NotFound
 
-        # Create request context if not already present
-        # This is needed because this might be called directly from Rust
-        # without going through the usual wrapper if it's a 404
         try:
             request = Request._from_rust_request(rust_request)
             request.app = self
             token = _request_ctx.set(request)
-
             try:
-                # Handle via the normal exception handling logic
                 response = self._handle_exception(NotFound())
                 return self._response_to_rust_format(response)
             finally:
@@ -303,29 +215,26 @@ class BustAPI(
             self.logger.error(f"Error in 404 fallback: {e}")
             return ("Not Found", 404, {"Content-Type": "text/plain"})
 
-    def _response_to_rust_format(self, response: Response) -> Union[tuple, Response]:
-        """Convert Python Response object to format expected by Rust."""
-        # Check for FileResponse (has path attribute)
-        if hasattr(response, "path"):
-            return response
+    def _response_to_rust_format(self, response: Response) -> tuple:
+        """
+        Convert Python Response object to format expected by Rust (body, status, headers).
+        """
+        if hasattr(response, "get_data"):
+            body = response.get_data()
+        else:
+            body = str(response).encode("utf-8")
 
-        # Check for StreamingResponse (has content attribute)
-        if hasattr(response, "content"):
-            return response
+        status = getattr(response, "status_code", 200)
 
-        # Return (body, status_code, headers) tuple
-        headers_dict = {}
-        if hasattr(response, "headers") and response.headers:
-            headers_dict = dict(response.headers)
+        # Extract headers as a list of tuples to preserve multi-value headers
+        if hasattr(response.headers, "items"):
+            headers = response.headers.items()
+            if not isinstance(headers, list):
+                headers = list(headers)
+        else:
+            headers = []
 
-        body = (
-            response.get_data(as_text=False)
-            if hasattr(response, "get_data")
-            else str(response).encode("utf-8")
-        )
-        status_code = response.status_code if hasattr(response, "status_code") else 200
-
-        return (body.decode("utf-8", errors="replace"), status_code, headers_dict)
+        return (body, status, headers)
 
     def run(
         self,
@@ -339,43 +248,22 @@ class BustAPI(
         server: str = "rust",
         **options,
     ) -> None:
-        """
-        Run the application server (Flask-compatible).
-
-        Args:
-            host: Hostname to bind to (default: 127.0.0.1)
-            port: Port to bind to (default: 5000)
-            debug: Enable debug mode
-            verbose: Enable verbose logging (trace level)
-            load_dotenv: Load environment variables from .env file
-            workers: Number of worker threads
-            reload: Enable auto-reload on code changes
-            server: Server backend ('rust', 'uvicorn', 'gunicorn', 'hypercorn')
-            **options: Additional server options
-        """
         if debug:
             self.config["DEBUG"] = True
-
         from .server import runner
 
-        # Handle hot reload
         if reload or debug:
             runner.enable_hot_reload()
-
         if workers is None:
             import multiprocessing
 
             workers = 1 if debug else multiprocessing.cpu_count()
-
-        # Dispatch to appropriate server
         if server == "rust":
             runner.run_server_rust(self, host, port, workers, debug, verbose)
-        elif server == "uvicorn":
-            runner.run_server_uvicorn(self, host, port, workers, debug, **options)
-        elif server == "gunicorn":
-            runner.run_server_gunicorn(self, host, port, workers, debug, **options)
-        elif server == "hypercorn":
-            runner.run_server_hypercorn(self, host, port, workers, debug, **options)
+        else:
+            getattr(runner, f"run_server_{server}")(
+                self, host, port, workers, debug, **options
+            )
 
     async def run_async(
         self,
@@ -385,29 +273,17 @@ class BustAPI(
         verbose: bool = False,
         **options,
     ) -> None:
-        """Run the application server asynchronously."""
         if debug:
             self.config["DEBUG"] = True
             from .server import runner
 
             runner.setup_debug_logging(self)
-
         try:
             await self._rust_app.run_async(host, port, debug, verbose, 1)
         except Exception as e:
             print(f"❌ Async server error: {e}")
 
     def test_client(self, use_cookies: bool = True, **kwargs):
-        """
-        Create a test client for the application.
-
-        Args:
-            use_cookies: Enable cookie support in test client
-            **kwargs: Additional test client options
-
-        Returns:
-            BustTestClient instance
-        """
         from .testing import BustTestClient
 
         return BustTestClient(self, use_cookies=use_cookies, **kwargs)
