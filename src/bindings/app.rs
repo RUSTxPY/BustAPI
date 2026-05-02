@@ -354,7 +354,7 @@ impl PyBustApp {
             host,
             port,
             debug,
-            workers: 1, 
+            workers: 1,
             show_banner,
         };
 

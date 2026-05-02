@@ -77,7 +77,10 @@ pub fn convert_py_result_to_response(
 
             if let Ok(ct_prop) = result_bound.getattr("content_type") {
                 if let Ok(ct) = ct_prop.extract::<String>() {
-                    let has_ct = resp.headers.iter().any(|(k, _)| k.to_lowercase() == "content-type");
+                    let has_ct = resp
+                        .headers
+                        .iter()
+                        .any(|(k, _)| k.to_lowercase() == "content-type");
                     if !has_ct {
                         resp.set_header("Content-Type", &ct);
                     }
@@ -119,15 +122,19 @@ pub fn convert_py_result_to_response(
                         if let Ok(iter) = items.try_iter() {
                             for item in iter.flatten() {
                                 if let Ok((k, v)) = item.extract::<(String, String)>() {
-                                    if k.to_lowercase() == "content-type" { has_ct = true; }
+                                    if k.to_lowercase() == "content-type" {
+                                        has_ct = true;
+                                    }
                                     resp.add_header(k, v);
                                 }
                             }
                         }
                     } else if let Ok(iter) = hdrs.try_iter() {
-                         for item in iter.flatten() {
+                        for item in iter.flatten() {
                             if let Ok((k, v)) = item.extract::<(String, String)>() {
-                                if k.to_lowercase() == "content-type" { has_ct = true; }
+                                if k.to_lowercase() == "content-type" {
+                                    has_ct = true;
+                                }
                                 resp.add_header(k, v);
                             }
                         }
