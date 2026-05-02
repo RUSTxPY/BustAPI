@@ -16,15 +16,45 @@ impl ResponseData {
         self
     }
 
-    /// Set header value
+    /// Set header value (overwrites if exists)
     pub fn set_header<K: Into<String>, V: Into<String>>(&mut self, key: K, value: V) -> &mut Self {
-        self.headers.insert(key.into(), value.into());
+        let k_str = key.into();
+        let v_str = value.into();
+        let lower_k = k_str.to_lowercase();
+        
+        if let Some(pos) = self.headers.iter().position(|(k, _)| k.to_lowercase() == lower_k) {
+            self.headers[pos] = (k_str, v_str);
+        } else {
+            self.headers.push((k_str, v_str));
+        }
         self
     }
 
-    /// Get header value
+    /// Add header value (always appends)
+    pub fn add_header<K: Into<String>, V: Into<String>>(&mut self, key: K, value: V) -> &mut Self {
+        self.headers.push((key.into(), value.into()));
+        self
+    }
+
+    /// Compatibility method for HashMap::insert
+    pub fn insert(&mut self, key: String, value: String) -> Option<String> {
+        let lower_k = key.to_lowercase();
+        if let Some(pos) = self.headers.iter().position(|(k, _)| k.to_lowercase() == lower_k) {
+            let old = std::mem::replace(&mut self.headers[pos], (key, value));
+            Some(old.1)
+        } else {
+            self.headers.push((key, value));
+            None
+        }
+    }
+
+    /// Get header value (returns the first match)
     pub fn get_header(&self, key: &str) -> Option<&String> {
-        self.headers.get(key)
+        let lower_key = key.to_lowercase();
+        self.headers
+            .iter()
+            .find(|(k, _)| k.to_lowercase() == lower_key)
+            .map(|(_, v)| v)
     }
 
     /// Get response body as string

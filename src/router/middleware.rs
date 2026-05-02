@@ -48,16 +48,16 @@ impl Middleware for CorsMiddleware {
 
     fn process_response(&self, _req: &RequestData, resp: &mut ResponseData) {
         // Add CORS headers
-        resp.headers.insert(
-            "Access-Control-Allow-Origin".to_string(),
+        resp.set_header(
+            "Access-Control-Allow-Origin",
             self.allowed_origins
                 .first()
                 .unwrap_or(&"*".to_string())
                 .clone(),
         );
 
-        resp.headers.insert(
-            "Access-Control-Allow-Methods".to_string(),
+        resp.set_header(
+            "Access-Control-Allow-Methods",
             self.allowed_methods
                 .iter()
                 .map(|m| m.to_string())
@@ -65,8 +65,8 @@ impl Middleware for CorsMiddleware {
                 .join(", "),
         );
 
-        resp.headers.insert(
-            "Access-Control-Allow-Headers".to_string(),
+        resp.set_header(
+            "Access-Control-Allow-Headers",
             self.allowed_headers.join(", "),
         );
     }

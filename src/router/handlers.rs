@@ -334,7 +334,7 @@ impl Router {
             } else {
                 new_path
             };
-            resp.headers.insert("Location".to_string(), location);
+            resp.set_header("Location", location);
             resp
         })
     }

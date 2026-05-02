@@ -2,13 +2,12 @@
 
 use http::StatusCode;
 use pyo3::{types::PyAny, Py, Python};
-use std::collections::HashMap;
 
 /// HTTP response data structure
 #[derive(Debug)]
 pub struct ResponseData {
     pub status: StatusCode,
-    pub headers: HashMap<String, String>,
+    pub headers: Vec<(String, String)>,
     pub body: Vec<u8>,
     pub file_path: Option<String>,
     pub stream_iterator: Option<Py<PyAny>>,
@@ -21,7 +20,6 @@ impl Clone for ResponseData {
             headers: self.headers.clone(),
             body: self.body.clone(),
             file_path: self.file_path.clone(),
-            // Clone Py<PyAny> requires GIL
             stream_iterator: self
                 .stream_iterator
                 .as_ref()
@@ -35,7 +33,7 @@ impl ResponseData {
     pub fn new() -> Self {
         Self {
             status: StatusCode::OK,
-            headers: HashMap::new(),
+            headers: Vec::new(),
             body: Vec::new(),
             file_path: None,
             stream_iterator: None,
@@ -46,7 +44,7 @@ impl ResponseData {
     pub fn from_static(body: &'static [u8]) -> Self {
         Self {
             status: StatusCode::OK,
-            headers: HashMap::new(),
+            headers: Vec::new(),
             body: body.to_vec(),
             file_path: None,
             stream_iterator: None,
@@ -55,8 +53,8 @@ impl ResponseData {
 
     /// Create JSON response with pre-serialized content
     pub fn json_static(json: &'static str) -> Self {
-        let mut headers = HashMap::new();
-        headers.insert("Content-Type".to_string(), "application/json".to_string());
+        let mut headers = Vec::new();
+        headers.push(("Content-Type".to_string(), "application/json".to_string()));
         Self {
             status: StatusCode::OK,
             headers,
@@ -70,7 +68,7 @@ impl ResponseData {
     pub fn with_status(status: StatusCode) -> Self {
         Self {
             status,
-            headers: HashMap::new(),
+            headers: Vec::new(),
             body: Vec::new(),
             file_path: None,
             stream_iterator: None,
@@ -81,7 +79,7 @@ impl ResponseData {
     pub fn with_body<B: Into<Vec<u8>>>(body: B) -> Self {
         Self {
             status: StatusCode::OK,
-            headers: HashMap::new(),
+            headers: Vec::new(),
             body: body.into(),
             file_path: None,
             stream_iterator: None,

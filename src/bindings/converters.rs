@@ -8,45 +8,36 @@ use std::collections::HashMap;
 pub fn convert_py_result_to_response(
     py: Python,
     result: Py<PyAny>,
-    req_headers: &HashMap<String, String>,
+    _req_headers: &HashMap<String, String>,
 ) -> crate::response::ResponseData {
     use crate::response::ResponseData;
     use http::StatusCode;
     use std::path::Path;
 
+    // Convert result to Bound
+    let result_bound = result.bind(py);
+
     // FIRST: Check for explicit path attribute (FileResponse optimization)
-    // This must come before generic Response check since FileResponse inherits from Response
-    if let Ok(path_obj) = result.getattr(py, "path") {
-        if let Ok(path_str) = path_obj.extract::<String>(py) {
-            // It's a file response! Use Actix's NamedFile via ResponseData (handled in server/handlers.rs)
+    if let Ok(path_obj) = result_bound.getattr("path") {
+        if let Ok(path_str) = path_obj.extract::<String>() {
             let path = Path::new(&path_str);
             if path.exists() {
                 let mut resp = ResponseData::new();
                 resp.file_path = Some(path_str);
 
-                // Copy Status
-                if let Ok(status_code) = result.getattr(py, "status_code") {
-                    if let Ok(status) = status_code.extract::<u16>(py) {
+                if let Ok(status_code) = result_bound.getattr("status_code") {
+                    if let Ok(status) = status_code.extract::<u16>() {
                         resp.set_status(StatusCode::from_u16(status).unwrap_or(StatusCode::OK));
                     }
                 }
 
-                // Copy Headers
-                if let Ok(headers) = result.getattr(py, "headers") {
-                    if let Ok(header_dict) = headers.extract::<HashMap<String, String>>(py) {
-                        for (k, v) in header_dict {
-                            // Don't overwrite Content-Length from file serving
-                            if k.to_lowercase() != "content-length" {
-                                resp.set_header(&k, &v);
-                            }
-                        }
-                    } else if let Ok(items) = headers.call_method0(py, "items") {
-                        // Handle wsgiref.headers or other mapping types
-                        if let Ok(iter) = items.bind(py).try_iter() {
+                if let Ok(headers) = result_bound.getattr("headers") {
+                    if let Ok(items) = headers.call_method0("items") {
+                        if let Ok(iter) = items.try_iter() {
                             for item in iter.flatten() {
                                 if let Ok((k, v)) = item.extract::<(String, String)>() {
                                     if k.to_lowercase() != "content-length" {
-                                        resp.set_header(&k, &v);
+                                        resp.add_header(&k, &v);
                                     }
                                 }
                             }
@@ -58,30 +49,21 @@ pub fn convert_py_result_to_response(
         }
     }
 
-    // STREAMING: Check for content attribute (for StreamingResponse)
-    if let Ok(content_obj) = result.getattr(py, "content") {
-        // Verify it isn't None (Response base sometimes has content property?)
-        if !content_obj.is_none(py) {
+    // STREAMING: Check for content attribute
+    if let Ok(content_obj) = result_bound.getattr("content") {
+        if !content_obj.is_none() {
             let mut resp = ResponseData::new();
-            resp.stream_iterator = Some(content_obj);
+            resp.stream_iterator = Some(content_obj.unbind());
 
-            // Copy Status
-            if let Ok(status_code) = result.getattr(py, "status_code") {
-                if let Ok(status) = status_code.extract::<u16>(py) {
+            if let Ok(status_code) = result_bound.getattr("status_code") {
+                if let Ok(status) = status_code.extract::<u16>() {
                     resp.set_status(StatusCode::from_u16(status).unwrap_or(StatusCode::OK));
                 }
             }
 
-            // Copy Headers
-            if let Ok(headers) = result.getattr(py, "headers") {
-                if let Ok(header_dict) = headers.extract::<HashMap<String, String>>(py) {
-                    for (k, v) in header_dict {
-                        if k.to_lowercase() != "content-length" {
-                            resp.set_header(&k, &v);
-                        }
-                    }
-                } else if let Ok(items) = headers.call_method0(py, "items") {
-                    if let Ok(iter) = items.bind(py).try_iter() {
+            if let Ok(headers) = result_bound.getattr("headers") {
+                if let Ok(items) = headers.call_method0("items") {
+                    if let Ok(iter) = items.try_iter() {
                         for item in iter.flatten() {
                             if let Ok((k, v)) = item.extract::<(String, String)>() {
                                 if k.to_lowercase() != "content-length" {
@@ -93,12 +75,10 @@ pub fn convert_py_result_to_response(
                 }
             }
 
-            // Ensure Content-Type is set if missing (headers might not reflect self.content_type if not synced)
-            if let Ok(ct_prop) = result.getattr(py, "content_type") {
-                if let Ok(ct) = ct_prop.extract::<String>(py) {
-                    if !resp.headers.contains_key("Content-Type")
-                        && !resp.headers.contains_key("content-type")
-                    {
+            if let Ok(ct_prop) = result_bound.getattr("content_type") {
+                if let Ok(ct) = ct_prop.extract::<String>() {
+                    let has_ct = resp.headers.iter().any(|(k, _)| k.to_lowercase() == "content-type");
+                    if !has_ct {
                         resp.set_header("Content-Type", &ct);
                     }
                 }
@@ -109,14 +89,14 @@ pub fn convert_py_result_to_response(
     }
 
     // Check if tuple (body, status) or (body, status, headers)
-    if let Ok(tuple) = result.cast_bound::<PyTuple>(py) {
+    if let Ok(tuple) = result_bound.downcast::<PyTuple>() {
         match tuple.len() {
             2 => {
                 if let (Ok(body), Ok(status)) = (
                     tuple.get_item(0),
                     tuple.get_item(1).and_then(|s| s.extract::<u16>()),
                 ) {
-                    let response_body = python_to_response_body(py, body.into());
+                    let response_body = python_to_response_body(py, body.unbind());
                     let mut resp = ResponseData::with_body(response_body.into_bytes());
                     resp.set_status(StatusCode::from_u16(status).unwrap_or(StatusCode::OK));
                     resp.set_header("Content-Type", "application/json");
@@ -127,25 +107,35 @@ pub fn convert_py_result_to_response(
                 if let (Ok(body), Ok(status), Ok(hdrs)) = (
                     tuple.get_item(0),
                     tuple.get_item(1).and_then(|s| s.extract::<u16>()),
-                    tuple
-                        .get_item(2)
-                        .and_then(|h| h.extract::<HashMap<String, String>>()),
+                    tuple.get_item(2),
                 ) {
-                    let response_body = python_to_response_body(py, body.into());
+                    let response_body = python_to_response_body(py, body.unbind());
                     let status_code = StatusCode::from_u16(status).unwrap_or(StatusCode::OK);
-
                     let mut resp = ResponseData::with_status(status_code);
-                    let mut content_type = "application/json".to_string();
+                    let mut has_ct = false;
 
-                    // Set headers
-                    for (k, v) in &hdrs {
-                        if k.to_lowercase() == "content-type" {
-                            content_type = v.clone();
+                    // Support headers as dict or list of tuples
+                    if let Ok(items) = hdrs.call_method0("items") {
+                        if let Ok(iter) = items.try_iter() {
+                            for item in iter.flatten() {
+                                if let Ok((k, v)) = item.extract::<(String, String)>() {
+                                    if k.to_lowercase() == "content-type" { has_ct = true; }
+                                    resp.add_header(k, v);
+                                }
+                            }
                         }
-                        resp.set_header(k, v);
+                    } else if let Ok(iter) = hdrs.try_iter() {
+                         for item in iter.flatten() {
+                            if let Ok((k, v)) = item.extract::<(String, String)>() {
+                                if k.to_lowercase() == "content-type" { has_ct = true; }
+                                resp.add_header(k, v);
+                            }
+                        }
                     }
 
-                    resp.set_header("Content-Type", content_type);
+                    if !has_ct {
+                        resp.set_header("Content-Type", "application/json");
+                    }
                     resp.set_body(response_body.into_bytes());
                     return resp;
                 }
@@ -154,73 +144,15 @@ pub fn convert_py_result_to_response(
         }
     }
 
-    // Check for explicit path attribute (FileResponse optimization)
-    tracing::debug!("Checking for path attribute on result object");
-    if let Ok(path_obj) = result.getattr(py, "path") {
-        tracing::debug!("Found path attribute!");
-        if let Ok(path_str) = path_obj.extract::<String>(py) {
-            tracing::debug!("Extracted path string: {}", path_str);
-            // It's a file response! Use Rust's file serving logic with Range support
-            let path = Path::new(&path_str);
-            if path.exists() {
-                // Debug headers
-                tracing::debug!(
-                    "Path exists. Incoming headers: {:?}",
-                    req_headers.keys().collect::<Vec<_>>()
-                );
-
-                let mut resp = ResponseData::new();
-                resp.file_path = Some(path_str);
-
-                // Copy Status
-                if let Ok(status_code) = result.getattr(py, "status_code") {
-                    if let Ok(status) = status_code.extract::<u16>(py) {
-                        resp.set_status(StatusCode::from_u16(status).unwrap_or(StatusCode::OK));
-                    }
-                }
-
-                // Copy Headers
-                if let Ok(headers) = result.getattr(py, "headers") {
-                    if let Ok(header_dict) = headers.extract::<HashMap<String, String>>(py) {
-                        for (k, v) in header_dict {
-                            // Don't overwrite Content-Length from file serving
-                            if k.to_lowercase() != "content-length" {
-                                resp.set_header(&k, &v);
-                            }
-                        }
-                    } else if let Ok(items) = headers.call_method0(py, "items") {
-                        // Handle wsgiref.headers or other mapping types
-                        if let Ok(iter) = items.bind(py).try_iter() {
-                            for item in iter.flatten() {
-                                if let Ok((k, v)) = item.extract::<(String, String)>() {
-                                    if k.to_lowercase() != "content-length" {
-                                        resp.set_header(&k, &v);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                return resp;
-            }
-        }
-    }
-
     // Check for Response object (duck typing)
-    // Look for .status_code, .headers, .get_data()
-    if let Ok(status_code) = result.getattr(py, "status_code") {
-        if let Ok(headers) = result.getattr(py, "headers") {
-            if let Ok(get_data) = result.getattr(py, "get_data") {
-                // It looks like a Response object!
-
-                // Extract status
-                let status = status_code.extract::<u16>(py).unwrap_or(200);
-
-                // Extract body
-                let body_obj = get_data.call0(py).unwrap_or_else(|_| result.clone_ref(py));
-                let body_bytes = if let Ok(bytes) = body_obj.extract::<Vec<u8>>(py) {
+    if let Ok(status_code) = result_bound.getattr("status_code") {
+        if let Ok(headers) = result_bound.getattr("headers") {
+            if let Ok(get_data) = result_bound.getattr("get_data") {
+                let status = status_code.extract::<u16>().unwrap_or(200);
+                let body_obj = get_data.call0().unwrap_or_else(|_| result_bound.clone());
+                let body_bytes = if let Ok(bytes) = body_obj.extract::<Vec<u8>>() {
                     bytes
-                } else if let Ok(s) = body_obj.extract::<String>(py) {
+                } else if let Ok(s) = body_obj.extract::<String>() {
                     s.into_bytes()
                 } else {
                     Vec::new()
@@ -229,26 +161,15 @@ pub fn convert_py_result_to_response(
                 let mut resp = ResponseData::with_body(body_bytes);
                 resp.set_status(StatusCode::from_u16(status).unwrap_or(StatusCode::OK));
 
-                // Extract headers
-                // headers might be a dict or Headers object. try converting to dict
-                if let Ok(header_dict) = headers.extract::<HashMap<String, String>>(py) {
-                    for (k, v) in header_dict {
-                        resp.set_header(&k, &v);
-                    }
-                } else {
-                    // Try iterating if it's not a dict, e.g. wsgiref.headers.Headers
-                    if let Ok(items) = headers.call_method0(py, "items") {
-                        if let Ok(iter) = items.bind(py).try_iter() {
-                            for item in iter.flatten() {
-                                // Extract tuple (key, value)
-                                if let Ok((k, v)) = item.extract::<(String, String)>() {
-                                    resp.set_header(&k, &v);
-                                }
+                if let Ok(items) = headers.call_method0("items") {
+                    if let Ok(iter) = items.try_iter() {
+                        for item in iter.flatten() {
+                            if let Ok((k, v)) = item.extract::<(String, String)>() {
+                                resp.add_header(&k, &v);
                             }
                         }
                     }
                 }
-
                 return resp;
             }
         }
@@ -265,7 +186,6 @@ pub fn convert_py_result_to_response(
         resp.set_header("Content-Type", "application/json");
         resp
     } else {
-        // Default to text/plain for other strings
         ResponseData::text(body)
     }
 }
@@ -274,33 +194,28 @@ use serde::ser::{Serialize, SerializeMap, SerializeSeq, Serializer};
 
 /// Convert Python object to response body bytes
 pub fn python_to_response_body(py: Python, obj: Py<PyAny>) -> String {
-    if let Ok(bytes) = obj.cast_bound::<PyBytes>(py) {
+    let obj_bound = obj.bind(py);
+    if let Ok(bytes) = obj_bound.downcast::<PyBytes>() {
         return String::from_utf8_lossy(bytes.as_bytes()).to_string();
     }
 
-    if let Ok(string) = obj.cast_bound::<PyString>(py) {
+    if let Ok(string) = obj_bound.downcast::<PyString>() {
         return string.to_string();
     }
 
-    // Optimization: Zero-Allocation Serialization
-    // We implement serde::Serialize for a wrapper type that holds the PyObject
-    // This allows serde_json to write directly to the string buffer without
-    // creating an intermediate serde_json::Value DOM.
-    let obj_ref = obj.bind(py);
-    if obj_ref.is_instance_of::<PyDict>()
-        || obj_ref.is_instance_of::<pyo3::types::PyList>()
-        || obj_ref.is_instance_of::<pyo3::types::PyTuple>()
+    if obj_bound.is_instance_of::<PyDict>()
+        || obj_bound.is_instance_of::<pyo3::types::PyList>()
+        || obj_bound.is_instance_of::<pyo3::types::PyTuple>()
     {
-        let serializer = PyJson(obj_ref);
+        let serializer = PyJson(obj_bound);
         match serde_json::to_string(&serializer) {
             Ok(s) => return s,
             Err(e) => tracing::warn!("Native zero-copy serialization failed: {:?}", e),
         }
     }
 
-    // Try JSON serialization (Fallback)
     if let Ok(json_module) = py.import("json") {
-        if let Ok(json_str) = json_module.call_method1("dumps", (&obj,)) {
+        if let Ok(json_str) = json_module.call_method1("dumps", (obj_bound,)) {
             if let Ok(s) = json_str.extract::<String>() {
                 return s;
             }
@@ -310,7 +225,6 @@ pub fn python_to_response_body(py: Python, obj: Py<PyAny>) -> String {
     "{}".to_string()
 }
 
-// Wrapper struct for Zero-Copy Serialization
 struct PyJson<'a>(&'a Bound<'a, PyAny>);
 
 impl<'a> Serialize for PyJson<'a> {
@@ -325,29 +239,28 @@ impl<'a> Serialize for PyJson<'a> {
             return serializer.serialize_none();
         }
 
-        if let Ok(s) = obj.cast::<PyString>() {
+        if let Ok(s) = obj.downcast::<PyString>() {
             return serializer.serialize_str(s.to_string_lossy().as_ref());
         }
 
-        if let Ok(b) = obj.cast::<PyBool>() {
+        if let Ok(b) = obj.downcast::<PyBool>() {
             return serializer.serialize_bool(b.is_true());
         }
 
-        if let Ok(i) = obj.cast::<PyInt>() {
+        if let Ok(i) = obj.downcast::<PyInt>() {
             if let Ok(val) = i.extract::<i64>() {
                 return serializer.serialize_i64(val);
             }
-            // Fallback for huge integers if needed, but for now i64 is reasonable
             return serializer.serialize_str(&i.to_string());
         }
 
-        if let Ok(f) = obj.cast::<PyFloat>() {
+        if let Ok(f) = obj.downcast::<PyFloat>() {
             if let Ok(val) = f.extract::<f64>() {
                 return serializer.serialize_f64(val);
             }
         }
 
-        if let Ok(l) = obj.cast::<PyList>() {
+        if let Ok(l) = obj.downcast::<PyList>() {
             let mut seq = serializer.serialize_seq(Some(l.len()))?;
             for item in l {
                 seq.serialize_element(&PyJson(&item))?;
@@ -355,7 +268,7 @@ impl<'a> Serialize for PyJson<'a> {
             return seq.end();
         }
 
-        if let Ok(t) = obj.cast::<PyTuple>() {
+        if let Ok(t) = obj.downcast::<PyTuple>() {
             let mut seq = serializer.serialize_seq(Some(t.len()))?;
             for item in t {
                 seq.serialize_element(&PyJson(&item))?;
@@ -363,7 +276,7 @@ impl<'a> Serialize for PyJson<'a> {
             return seq.end();
         }
 
-        if let Ok(d) = obj.cast::<PyDict>() {
+        if let Ok(d) = obj.downcast::<PyDict>() {
             let mut map = serializer.serialize_map(Some(d.len()))?;
             for (k, v) in d {
                 let key_str = k.extract::<String>().map_err(serde::ser::Error::custom)?;
@@ -372,13 +285,10 @@ impl<'a> Serialize for PyJson<'a> {
             return map.end();
         }
 
-        // Fallback for unknown types -> String
         serializer.serialize_str(&obj.to_string())
     }
 }
 
-/// Convert serde_json::Value to Python object
-#[allow(deprecated)]
 pub fn json_value_to_python(py: Python, value: &serde_json::Value) -> PyResult<Py<PyAny>> {
     use pyo3::types::PyBool;
 

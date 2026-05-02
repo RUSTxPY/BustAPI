@@ -309,29 +309,21 @@ impl PyBustApp {
             show_banner,
         };
 
-        // Initialize logging if debug is on and not already initialized
         // Initialize logging
         if verbose {
-            // Verbose mode: Show detailed tracing logs (headers, etc.)
             let _ = tracing_subscriber::fmt()
                 .with_env_filter("debug,actix_server=info,actix_web=debug,notify=debug")
                 .try_init();
         } else if debug {
-            // Debug mode: Show ONLY summary (handled by println!), hide tracing::debug!
             let _ = tracing_subscriber::fmt()
                 .with_env_filter("info,actix_server=error,actix_web=error")
                 .try_init();
         } else {
-            // Clean mode: Suppress Actix startup noise, only show INFO
             let _ = tracing_subscriber::fmt()
                 .with_env_filter("info,actix_server=error,actix_web=error")
                 .try_init();
         }
 
-        // In Python 3.13 free-threaded, we can release GIL and run full parallel!
-        // In Python 3.13 free-threaded, we can release GIL and run full parallel!
-
-        // Update debug state
         self.state
             .debug
             .store(debug || verbose, std::sync::atomic::Ordering::Relaxed);
@@ -362,24 +354,20 @@ impl PyBustApp {
             host,
             port,
             debug,
-            workers: 1, // Async mode runs in single worker usually
+            workers: 1, 
             show_banner,
         };
 
-        // Initialize logging
-        // Initialize logging
         if verbose {
             let _ = tracing_subscriber::fmt()
                 .with_env_filter("debug,actix_server=info,actix_web=debug,notify=debug")
                 .try_init();
         } else {
-            // Debug or Default: INFO level (headers hidden)
             let _ = tracing_subscriber::fmt()
                 .with_env_filter("info,actix_server=error,actix_web=error")
                 .try_init();
         }
 
-        // Update debug state
         self.state
             .debug
             .store(debug || verbose, std::sync::atomic::Ordering::Relaxed);
@@ -399,7 +387,7 @@ impl PyBustApp {
         query_string: &str,
         headers: std::collections::HashMap<String, String>,
         body: Vec<u8>,
-    ) -> PyResult<(String, u16, std::collections::HashMap<String, String>)> {
+    ) -> PyResult<(String, u16, Vec<(String, String)>)> {
         let state = self.state.clone();
         let method_enum = std::str::FromStr::from_str(method)
             .map_err(|_| pyo3::exceptions::PyValueError::new_err("Invalid HTTP method"))?;
@@ -410,16 +398,12 @@ impl PyBustApp {
         req_data.query_string = query_string;
         req_data.headers = headers;
         req_data.body = body;
-        // Parse query params from query string if needed
         if !req_data.query_string.is_empty() {
             req_data.query_params = url::form_urlencoded::parse(req_data.query_string.as_bytes())
                 .into_owned()
                 .collect();
         }
 
-        // We needs to block on the async runtime to acquire the lock and process
-        // Since we are likely called from a sync context (WSGI) or async (ASGI via thread),
-        // we use the runtime to execute.
         let response_data = self.runtime.block_on(async {
             let routes = state.routes.read().await;
             routes.process_request(req_data)
