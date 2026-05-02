@@ -37,3 +37,33 @@ def admin():
         abort(403, description="Admins only!")
     return "Welcome Admin"
 ```
+
+## Catch-All Error Handler
+
+To handle any unhandled exception (the "else" block), you can register a handler for the base `Exception` class.
+
+```python
+@app.errorhandler(Exception)
+def handle_unexpected_error(e):
+    # Log the error
+    app.logger.error(f"Unexpected error: {e}")
+    
+    # If it's already an HTTP error, let it handle itself
+    if hasattr(e, "get_response"):
+        return e.get_response()
+        
+    return {"error": "An internal error occurred"}, 500
+```
+
+## Custom Exceptions
+
+You can create your own exception classes and register handlers for them.
+
+```python
+class PaymentRequired(Exception):
+    pass
+
+@app.errorhandler(PaymentRequired)
+def handle_payment_required(e):
+    return "Please pay to continue", 402
+```

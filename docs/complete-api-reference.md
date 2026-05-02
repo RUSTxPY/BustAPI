@@ -1,7 +1,7 @@
 # BustAPI Complete API Reference
 
-> **Version:** 0.3.1  
-> **Last Updated:** 2025-12-10
+> **Version:** 0.13.0  
+> **Last Updated:** 2026-05-02
 
 ## Table of Contents
 
@@ -1128,6 +1128,21 @@ class ValidationError(Exception):
 @app.errorhandler(ValidationError)
 def handle_validation_error(error):
     return {'error': str(error), 'type': 'validation_error'}, 400
+
+#### Catch-All Handler
+
+Handle all otherwise unhandled exceptions:
+
+```python
+@app.errorhandler(Exception)
+def handle_exception(e):
+    # Pass through HTTP errors
+    if hasattr(e, "get_response"):
+        return e.get_response()
+    
+    # Generic error for everything else
+    return {"error": "Something went wrong"}, 500
+```
 ```
 
 ### Using `abort()`
