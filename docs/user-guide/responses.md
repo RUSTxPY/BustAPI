@@ -46,6 +46,69 @@ def xml():
     resp = make_response("<data>value</data>")
 ```
 
+## Headers
+
+BustAPI provides a robust `Headers` object that supports case-insensitive access and multi-value headers.
+
+### Accessing Headers
+
+Headers are case-insensitive, so `resp.headers['Content-Type']` is the same as `resp.headers['content-type']`.
+
+```python
+from bustapi import make_response
+
+@app.route("/")
+def home():
+    resp = make_response("Hello")
+    resp.headers["X-Custom"] = "Value"
+    # Case-insensitive access
+    print(resp.headers["x-custom"])  # "Value"
+    return resp
+```
+
+### Multi-Value Headers
+
+To add multiple values for the same header (e.g., multiple `Link` or `Set-Cookie` headers), use the `.add()` method instead of assignment.
+
+```python
+resp.headers.add("Link", "<https://example.com/p1>; rel=\"prev\"")
+resp.headers.add("Link", "<https://example.com/p3>; rel=\"next\"")
+
+# Get all values as a list
+links = resp.headers.getlist("Link")
+```
+
+## Cookies
+
+You can set and delete cookies easily using the `Response` object.
+
+### Setting Cookies
+
+```python
+@app.route("/set-cookie")
+def set_cookie():
+    resp = make_response("Cookie set!")
+    resp.set_cookie(
+        "user_id", 
+        "123", 
+        max_age=3600, 
+        httponly=True, 
+        samesite="Lax",
+        secure=True
+    )
+    return resp
+```
+
+### Deleting Cookies
+
+```python
+@app.route("/logout")
+def logout():
+    resp = make_response("Logged out")
+    resp.delete_cookie("user_id", path="/", domain=None)
+    return resp
+```
+
 ## Streaming Responses
 
 You can stream data to the client using `StreamingResponse`. This supports both synchronous and asynchronous iterators.

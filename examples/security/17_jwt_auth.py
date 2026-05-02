@@ -5,7 +5,7 @@ This example demonstrates how to use the JWT extension for
 token-based authentication with Rust-backed JWT encoding/decoding.
 
 Run:
-    python examples/17_jwt_auth.py
+    python examples/security/17_jwt_auth.py
 
 Test with:
     # Login

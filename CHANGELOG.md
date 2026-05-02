@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented here.
 
+## [0.13.0] - 2026-05-02
+
+### Added
+- **Robust Header Infrastructure**:
+  - Refactored `Headers` class to use `collections.UserDict` for better standard library compatibility.
+  - Implemented full case-insensitivity for all header operations (get, set, delete).
+  - Added native support for multi-value headers via `headers.add(key, value)` and `headers.getlist(key)`.
+- **WSGI Adapter Enhancements**:
+  - Refactored `WSGIAdapter` to correctly handle multi-value headers.
+  - Integrated application-level error handling (including custom 404/500 handlers) into the WSGI layer.
+
+### Fixed
+- **JWT & Cookie Security**:
+  - Updated `Response.delete_cookie()` signature to accept `secure`, `httponly`, and `samesite` arguments, fixing crashes in JWT logout flows.
+  - Improved cookie attribute handling to ensure consistency between Python and Rust layers.
+- **Response Unwrapping**: Fixed a bug where returning a `Response` object inside another `Response` (common in error handlers using `render_template`) resulted in the object's string representation being sent as the body.
+- **FFI Stability**: Standardized the Python-to-Rust response conversion to ensure reliable header serialization.
+
 ## [0.12.0] - 2026-04-27
 
 ### Added

@@ -1,6 +1,6 @@
 # JWT Authentication
 
-BustAPI provides Rust-backed JWT (JSON Web Token) authentication for high-performance token-based auth.
+BustAPI provides Rust-backed JWT (JSON Web Token) authentication for high-performance token-based auth. This is ideal for stateless APIs and mobile backends.
 
 ## Quick Start
 
@@ -10,22 +10,25 @@ from bustapi import BustAPI, JWT, jwt_required
 app = BustAPI(__name__)
 app.secret_key = "your-secret-key"
 
+# Initialize JWT
 jwt = JWT(app)
 
 @app.post("/login")
 def login():
+    # Create an access token for a user
     token = jwt.create_access_token(identity="user123")
     return {"access_token": token}
 
 @app.get("/protected")
 @jwt_required
 def protected(request):
+    # Identity is available on the request object
     return {"user": request.jwt_identity}
 ```
 
-## JWT Class
+## Configuration Options
 
-### Initialization
+The `JWT` class supports various configuration options for security and flexibility.
 
 ```python
 jwt = JWT(
@@ -34,16 +37,71 @@ jwt = JWT(
     algorithm="HS256",               # HS256, HS384, HS512
     access_expires=900,              # 15 minutes (seconds)
     refresh_expires=2592000,         # 30 days (seconds)
+    
+    # Token Storage Location
+    token_location="headers",        # "headers", "cookies", or ["headers", "cookies"]
+    
+    # Cookie Settings (if using cookies)
+    access_cookie_name="access_token_cookie",
+    refresh_cookie_name="refresh_token_cookie",
+    cookie_secure=False,             # Set True in production (HTTPS)
+    cookie_httponly=True,            # Prevent JS access to cookies
+    cookie_samesite="Lax",           # "Strict", "Lax", or "None"
 )
 ```
 
-### Creating Tokens
+## Using Cookies
+
+Using cookies instead of the `Authorization` header is often more secure for web applications as it prevents XSS attacks from stealing tokens (when using `HttpOnly`).
+
+### 1. Enable Cookie Support
+
+```python
+jwt = JWT(app, token_location=["headers", "cookies"])
+```
+
+### 2. Set Cookies in Login
+
+```python
+from bustapi import make_response
+
+@app.post("/login")
+def login():
+    access_token = jwt.create_access_token(identity="user123")
+    refresh_token = jwt.create_refresh_token(identity="user123")
+    
+    resp = make_response({"login": True})
+    
+    # Set tokens in cookies
+    jwt.set_access_cookies(resp, access_token)
+    jwt.set_refresh_cookies(resp, refresh_token)
+    
+    return resp
+```
+
+### 3. Clear Cookies on Logout
+
+To log out a user, use `jwt.unset_jwt_cookies()`. This will correctly clear both access and refresh cookies from the response, ensuring the user is fully logged out.
+
+```python
+@app.post("/logout")
+def logout():
+    resp = make_response({"logout": True})
+    # This now robustly handles security flags like httponly and samesite
+    jwt.unset_jwt_cookies(resp)
+    return resp
+```
+
+!!! tip "Full Example"
+    See a complete working example in [examples/security/18_jwt_cookies.py](https://github.com/RUSTxPY/BustAPI/blob/main/examples/security/18_jwt_cookies.py).
+
+## Creating Tokens
 
 ```python
 # Access token (for API access)
 token = jwt.create_access_token(
     identity="user123",
-    expires_delta=3600,      # Custom expiry (optional)
+    expires_delta=3600,      # Custom expiry in seconds (optional)
     fresh=True,              # Fresh token from login
     claims={"role": "admin"} # Custom claims (optional)
 )
@@ -52,38 +110,40 @@ token = jwt.create_access_token(
 refresh = jwt.create_refresh_token(identity="user123")
 ```
 
-### Decoding Tokens
+## Decoding & Manual Verification
 
 ```python
-# Decode and verify
+# Decode and verify (raises ValueError if invalid/expired)
 claims = jwt.decode_token(token)
 # Returns: {"identity": "user123", "exp": ..., "iat": ..., "type": "access"}
 
 # Verify only (returns bool)
 is_valid = jwt.verify_token(token)
 
-# Get identity (works on expired tokens)
+# Get identity without verification (works even on expired tokens)
 identity = jwt.get_identity(token)
 ```
 
 ## Decorators
 
+Decorators provide a declarative way to protect your routes. When a token is verified, it sets `request.jwt_identity` and `request.jwt_claims` for the current request.
+
 ### @jwt_required
 
-Require valid JWT in `Authorization: Bearer <token>` header.
+Require a valid JWT. Looks in the locations specified in `token_location` (Default: `Authorization: Bearer <token>` header).
 
 ```python
 @app.get("/protected")
 @jwt_required
 def protected(request):
-    user_id = request.jwt_identity  # User identity from token
-    claims = request.jwt_claims     # All token claims
+    user_id = request.jwt_identity  # User identity string
+    claims = request.jwt_claims     # All token claims (dict)
     return {"user": user_id}
 ```
 
 ### @jwt_optional
 
-Allow both authenticated and anonymous access.
+Allow both authenticated and anonymous access. If no token or an invalid token is provided, `request.jwt_identity` will be `None`.
 
 ```python
 @app.get("/feed")
@@ -96,66 +156,34 @@ def feed(request):
 
 ### @fresh_jwt_required
 
-Require fresh token (from login, not from refresh).
+Require a **fresh** token. Fresh tokens are typically those created during a login operation (`fresh=True`), while tokens created via a refresh operation are usually marked as non-fresh.
 
 ```python
 @app.post("/change-password")
 @fresh_jwt_required
 def change_password(request):
-    # Only allow with fresh token
+    # Only allow with fresh token (security sensitive)
     return {"status": "password changed"}
 ```
 
 ### @jwt_refresh_token_required
 
-Require refresh token for the token refresh endpoint.
+Require a **refresh token**. This is used on the endpoint that issues new access tokens.
 
 ```python
 @app.post("/refresh")
 @jwt_refresh_token_required
 def refresh(request):
-    new_token = jwt.create_access_token(
-        identity=request.jwt_identity,
-        fresh=False  # Refreshed tokens are not fresh
-    )
-    return {"access_token": new_token}
-```
-
-## Complete Example
-
-```python
-from bustapi import BustAPI, JWT, jwt_required, jwt_refresh_token_required
-from bustapi.auth import hash_password, verify_password
-
-app = BustAPI(__name__)
-app.secret_key = "super-secret-key"
-jwt = JWT(app)
-
-# User database
-USERS = {"admin": hash_password("secret")}
-
-@app.post("/login")
-def login(request):
-    data = request.json
-    if verify_password(data["password"], USERS.get(data["username"], "")):
-        return {
-            "access_token": jwt.create_access_token(data["username"]),
-            "refresh_token": jwt.create_refresh_token(data["username"]),
-        }
-    return {"error": "Invalid credentials"}, 401
-
-@app.post("/refresh")
-@jwt_refresh_token_required
-def refresh(request):
-    return {"access_token": jwt.create_access_token(request.jwt_identity, fresh=False)}
-
-@app.get("/me")
-@jwt_required
-def me(request):
-    return {"user": request.jwt_identity}
-
-if __name__ == "__main__":
-    app.run()
+    # Use the identity from the refresh token to issue a new access token
+    new_token = jwt.create_access_token(request.jwt_identity, fresh=False)
+    
+    resp = make_response({"access_token": new_token})
+    
+    # If using cookies, update the access cookie
+    if "cookies" in jwt._token_location:
+        jwt.set_access_cookies(resp, new_token)
+        
+    return resp
 ```
 
 ## Algorithms
@@ -168,7 +196,8 @@ if __name__ == "__main__":
 
 ## Error Responses
 
-- `401 Missing Authorization header` - No token provided
+- `401 Missing JWT token` - No token provided in any configured location
 - `401 Token has expired` - Token past expiration
 - `401 Invalid token signature` - Wrong secret key
-- `401 Fresh token required` - Need fresh token for sensitive ops
+- `401 Fresh token required` - Need fresh token for sensitive operations
+- `401 Refresh token required` - Wrong token type for refresh endpoint

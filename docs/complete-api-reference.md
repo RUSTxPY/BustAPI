@@ -356,8 +356,29 @@ response.data           # Response body as bytes
 ```python
 response.set_data(data)                 # Set response data
 response.get_data(as_text=False)        # Get response data
-response.set_cookie(key, value, ...)    # Set a cookie
-response.delete_cookie(key, ...)        # Delete a cookie
+
+# Set a cookie
+response.set_cookie(
+    key: str, 
+    value: str = '', 
+    max_age: Optional[int] = None, 
+    expires: Optional[Union[datetime, float]] = None, 
+    path: str = '/', 
+    domain: Optional[str] = None, 
+    secure: bool = False, 
+    httponly: bool = False, 
+    samesite: Optional[str] = 'Lax'
+)
+
+# Delete a cookie
+response.delete_cookie(
+    key: str, 
+    path: str = '/', 
+    domain: Optional[str] = None,
+    secure: bool = False,
+    httponly: bool = False,
+    samesite: Optional[str] = 'Lax'
+)
 ```
 
 **Example:**
@@ -370,6 +391,30 @@ def custom_response():
     resp.set_cookie('session', 'abc123', max_age=3600)
     return resp
 ```
+
+### Headers Object
+
+The `response.headers` object provides a case-insensitive dictionary-like interface for managing HTTP headers.
+
+#### Methods
+
+- `get(key, default=None)`: Get the first value for a header (case-insensitive).
+- `add(key, value)`: Add a value to a header, preserving existing values (multi-value support).
+- `getlist(key)`: Get all values for a header as a list.
+- `setlist(key, values)`: Set multiple values for a header.
+- `items()`: Get all header key-value pairs as a list of tuples.
+
+**Example:**
+
+```python
+resp.headers['Content-Type'] = 'application/json'
+resp.headers.add('Link', '<https://example.com>; rel="next"')
+resp.headers.add('Link', '<https://example.com>; rel="prev"')
+
+links = resp.headers.getlist('Link')  # ['...', '...']
+```
+
+---
 
 #### Response Helper Functions
 

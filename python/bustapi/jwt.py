@@ -2,28 +2,14 @@
 BustAPI JWT Extension
 
 High-performance JWT support with Rust backend.
-
-Example:
-    from bustapi import BustAPI, JWT, jwt_required
-
-    app = BustAPI(__name__)
-    jwt = JWT(app, secret_key="your-secret-key")
-
-    @app.post("/login")
-    def login(username: str, password: str):
-        token = jwt.create_access_token(identity=user_id)
-        return {"access_token": token}
-
-    @app.get("/protected")
-    @jwt_required
-    def protected(request):
-        return {"user": request.jwt_identity}
+Supports both Header and Cookie-based token storage.
 """
 
 from functools import wraps
-from typing import Any, Callable, Dict, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
 from .http.request import request
+from .http.response import Response
 
 
 class JWT:
@@ -40,6 +26,12 @@ class JWT:
         algorithm: str = "HS256",
         access_expires: int = 900,  # 15 minutes
         refresh_expires: int = 2592000,  # 30 days
+        token_location: Union[str, List[str]] = "headers",
+        access_cookie_name: str = "access_token_cookie",
+        refresh_cookie_name: str = "refresh_token_cookie",
+        cookie_secure: bool = False,
+        cookie_httponly: bool = True,
+        cookie_samesite: Optional[str] = "Lax",
     ):
         """
         Initialize JWT extension.
@@ -50,6 +42,12 @@ class JWT:
             algorithm: Algorithm to use (HS256, HS384, HS512)
             access_expires: Access token expiry in seconds (default: 15 min)
             refresh_expires: Refresh token expiry in seconds (default: 30 days)
+            token_location: Where to look for tokens ("headers", "cookies", or ["headers", "cookies"])
+            access_cookie_name: Name of the access token cookie
+            refresh_cookie_name: Name of the refresh token cookie
+            cookie_secure: Whether cookies require HTTPS
+            cookie_httponly: Whether cookies are inaccessible to JavaScript
+            cookie_samesite: SameSite attribute for cookies
         """
         self._app = None
         self._manager = None
@@ -57,6 +55,18 @@ class JWT:
         self._algorithm = algorithm
         self._access_expires = access_expires
         self._refresh_expires = refresh_expires
+
+        # Cookie settings
+        if isinstance(token_location, str):
+            self._token_location = [token_location]
+        else:
+            self._token_location = token_location
+
+        self._access_cookie_name = access_cookie_name
+        self._refresh_cookie_name = refresh_cookie_name
+        self._cookie_secure = cookie_secure
+        self._cookie_httponly = cookie_httponly
+        self._cookie_samesite = cookie_samesite
 
         if app is not None:
             self.init_app(app)
@@ -89,18 +99,7 @@ class JWT:
         fresh: bool = True,
         claims: Optional[Dict[str, Any]] = None,
     ) -> str:
-        """
-        Create an access token.
-
-        Args:
-            identity: User identity (usually user ID)
-            expires_delta: Custom expiry in seconds (optional)
-            fresh: Whether token is fresh (from login, not refresh)
-            claims: Additional claims to include
-
-        Returns:
-            JWT token string
-        """
+        """Create an access token."""
         if self._manager is None:
             raise RuntimeError("JWT not initialized. Call init_app() first.")
 
@@ -114,59 +113,67 @@ class JWT:
         expires_delta: Optional[int] = None,
         claims: Optional[Dict[str, Any]] = None,
     ) -> str:
-        """
-        Create a refresh token.
-
-        Args:
-            identity: User identity (usually user ID)
-            expires_delta: Custom expiry in seconds (optional)
-            claims: Additional claims to include
-
-        Returns:
-            JWT token string
-        """
+        """Create a refresh token."""
         if self._manager is None:
             raise RuntimeError("JWT not initialized. Call init_app() first.")
 
         return self._manager.create_refresh_token(str(identity), expires_delta, claims)
 
+    def set_access_cookies(self, response: Response, encoded_access_token: str) -> None:
+        """Set access token in cookies on the response."""
+        response.set_cookie(
+            self._access_cookie_name,
+            encoded_access_token,
+            max_age=self._access_expires,
+            secure=self._cookie_secure,
+            httponly=self._cookie_httponly,
+            samesite=self._cookie_samesite,
+        )
+
+    def set_refresh_cookies(
+        self, response: Response, encoded_refresh_token: str
+    ) -> None:
+        """Set refresh token in cookies on the response."""
+        response.set_cookie(
+            self._refresh_cookie_name,
+            encoded_refresh_token,
+            max_age=self._refresh_expires,
+            secure=self._cookie_secure,
+            httponly=self._cookie_httponly,
+            samesite=self._cookie_samesite,
+        )
+
+    def unset_jwt_cookies(self, response: Response) -> None:
+        """Unset all JWT cookies on the response."""
+        response.delete_cookie(
+            self._access_cookie_name,
+            secure=self._cookie_secure,
+            httponly=self._cookie_httponly,
+            samesite=self._cookie_samesite,
+        )
+        response.delete_cookie(
+            self._refresh_cookie_name,
+            secure=self._cookie_secure,
+            httponly=self._cookie_httponly,
+            samesite=self._cookie_samesite,
+        )
+
     def decode_token(self, token: str) -> Dict[str, Any]:
-        """
-        Decode and verify a token.
-
-        Args:
-            token: JWT token string
-
-        Returns:
-            Dict with token claims
-
-        Raises:
-            ValueError: If token is invalid or expired
-        """
+        """Decode and verify a token."""
         if self._manager is None:
             raise RuntimeError("JWT not initialized. Call init_app() first.")
 
         return self._manager.decode_token(token)
 
     def verify_token(self, token: str) -> bool:
-        """
-        Verify a token without decoding.
-
-        Returns:
-            True if valid, False otherwise
-        """
+        """Verify a token without decoding."""
         if self._manager is None:
             return False
 
         return self._manager.verify_token(token)
 
     def get_identity(self, token: str) -> Optional[str]:
-        """
-        Get identity from token (works even on expired tokens).
-
-        Returns:
-            Identity string or None
-        """
+        """Get identity from token (works even on expired tokens)."""
         if self._manager is None:
             return None
 
@@ -191,30 +198,57 @@ def _get_jwt() -> JWT:
             return jwt_ext
 
     raise RuntimeError(
-        "No JWT instance found. Initialize JWT(app) on your main application. "
-        "When using Blueprints, initialize JWT on the main app in your entry point file, "
-        "not in the blueprint definition file."
+        "No JWT instance found. Initialize JWT(app) on your main application."
     )
 
 
 def _get_token_from_request() -> Optional[str]:
-    """Extract JWT from Authorization header."""
-    auth_header = request.headers.get("Authorization", "")
+    """Extract JWT from Authorization header or cookies."""
+    jwt_ext = _get_jwt()
+    locations = jwt_ext._token_location
 
-    if auth_header.startswith("Bearer "):
-        return auth_header[7:]
+    # 1. Try Headers
+    if "headers" in locations:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            return auth_header[7:]
+
+    # 2. Try Cookies
+    if "cookies" in locations:
+        # We need to know if we are looking for access or refresh token
+        # But decorators know which one they want.
+        # This function is generic. We'll try access first, then refresh if called from refresh decorator.
+        # Actually, the decorators should pass the cookie name.
+        # For simplicity, we check both if both are present.
+        token = request.cookies.get(jwt_ext._access_cookie_name)
+        if token:
+            return token
+
+        token = request.cookies.get(jwt_ext._refresh_cookie_name)
+        if token:
+            return token
+
+    return None
+
+
+def _get_refresh_token_from_request() -> Optional[str]:
+    """Specifically extract refresh token from request."""
+    jwt_ext = _get_jwt()
+    locations = jwt_ext._token_location
+
+    if "headers" in locations:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            return auth_header[7:]
+
+    if "cookies" in locations:
+        return request.cookies.get(jwt_ext._refresh_cookie_name)
 
     return None
 
 
 def jwt_required(fn: Callable) -> Callable:
-    """
-    Decorator to require a valid JWT token.
-
-    Token must be in Authorization header as: Bearer <token>
-
-    Sets request.jwt_identity and request.jwt_claims.
-    """
+    """Decorator to require a valid JWT token."""
 
     @wraps(fn)
     def wrapper(*args, **kwargs):
@@ -223,13 +257,17 @@ def jwt_required(fn: Callable) -> Callable:
         if not token:
             from .core.exceptions import abort
 
-            abort(401, "Missing Authorization header")
+            abort(401, "Missing JWT token")
 
         try:
             jwt_ext = _get_jwt()
             claims = jwt_ext.decode_token(token)
 
-            # Set on request context
+            if claims.get("type") == "refresh":
+                from .core.exceptions import abort
+
+                abort(401, "Access token required, not refresh token")
+
             request.jwt_identity = claims.get("identity")
             request.jwt_claims = claims
 
@@ -244,12 +282,7 @@ def jwt_required(fn: Callable) -> Callable:
 
 
 def jwt_optional(fn: Callable) -> Callable:
-    """
-    Decorator for optional JWT.
-
-    If valid token present, sets request.jwt_identity and request.jwt_claims.
-    If not, sets them to None and continues.
-    """
+    """Decorator for optional JWT."""
 
     @wraps(fn)
     def wrapper(*args, **kwargs):
@@ -265,7 +298,7 @@ def jwt_optional(fn: Callable) -> Callable:
                 request.jwt_identity = claims.get("identity")
                 request.jwt_claims = claims
             except ValueError:
-                pass  # Invalid token, but optional
+                pass
 
         return fn(*args, **kwargs)
 
@@ -273,11 +306,7 @@ def jwt_optional(fn: Callable) -> Callable:
 
 
 def fresh_jwt_required(fn: Callable) -> Callable:
-    """
-    Decorator to require a fresh JWT token.
-
-    Fresh tokens are created from login, not from refresh.
-    """
+    """Decorator to require a fresh JWT token."""
 
     @wraps(fn)
     def wrapper(*args, **kwargs):
@@ -286,7 +315,7 @@ def fresh_jwt_required(fn: Callable) -> Callable:
         if not token:
             from .core.exceptions import abort
 
-            abort(401, "Missing Authorization header")
+            abort(401, "Missing JWT token")
 
         try:
             jwt_ext = _get_jwt()
@@ -311,20 +340,16 @@ def fresh_jwt_required(fn: Callable) -> Callable:
 
 
 def jwt_refresh_token_required(fn: Callable) -> Callable:
-    """
-    Decorator to require a refresh token.
-
-    Used for the token refresh endpoint.
-    """
+    """Decorator to require a refresh token."""
 
     @wraps(fn)
     def wrapper(*args, **kwargs):
-        token = _get_token_from_request()
+        token = _get_refresh_token_from_request()
 
         if not token:
             from .core.exceptions import abort
 
-            abort(401, "Missing Authorization header")
+            abort(401, "Missing Refresh token")
 
         try:
             jwt_ext = _get_jwt()

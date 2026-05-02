@@ -12,6 +12,15 @@ The `examples/` directory in the repository contains many complete scripts demon
 - **03_async.py**: Using `async def` for non-blocking routes.
 - **04_request_data.py**: accessing query args and form data.
 
+## Security & Authentication
+
+Learn how to protect your application.
+
+- **17_jwt_auth.py**: Standard JWT authentication using the Authorization header.
+- **18_jwt_cookies.py**: Secure JWT implementation using HttpOnly cookies.
+- **11_security_demo.py**: Implementing security headers.
+- **10_rate_limit_demo.py**: Using the built-in rate limiter to prevent abuse.
+
 ## Data & Validation
 
 Learn how to robustly handle input.
@@ -27,8 +36,6 @@ For production-grade applications.
 
 - **06_blueprints.py**: Organizing your app into modules.
 - **14_middleware.py**: Custom request/response hooks.
-- **10_rate_limit_demo.py**: Using the built-in rate limiter to prevent abuse.
-- **11_security_demo.py**: Implementing security headers.
 
 ## Database & Templates
 

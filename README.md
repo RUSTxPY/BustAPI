@@ -39,6 +39,7 @@ Under the hood, BustAPI runs on [Actix-Web](https://actix.rs/) — consistently 
 - 🦀 **Rust-powered** — Zero-copy JSON, mimalloc allocator, Actix-Web
 - 🐍 **Pure Python API** — No Rust knowledge required
 - 🔒 **Security built-in** — JWT, sessions, CSRF, rate limiting
+- 🛡️ **Robust Header System** — Case-insensitive, multi-value support, high-performance cookie parsing
 - 📦 **Zero config** — `pip install bustapi` and you're ready
 - 🔥 **Hot reload** — Rust-native file watcher for instant restarts
 

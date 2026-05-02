@@ -2,6 +2,9 @@
 
 Flask-Login style session-based authentication for BustAPI.
 
+> [!TIP]
+> For stateless APIs or mobile backends, consider using [JWT Authentication](jwt.md) instead.
+
 ## Quick Start
 
 ```python
