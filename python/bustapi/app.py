@@ -193,7 +193,7 @@ class BustAPI(
                         if isinstance(rv, tuple)
                         else self._make_response(rv)
                     )
-        
+
         # If it's an HTTPException, it might have its own response logic
         if hasattr(exception, "get_response"):
             try:
