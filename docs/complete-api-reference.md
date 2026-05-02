@@ -359,21 +359,21 @@ response.get_data(as_text=False)        # Get response data
 
 # Set a cookie
 response.set_cookie(
-    key: str, 
-    value: str = '', 
-    max_age: Optional[int] = None, 
-    expires: Optional[Union[datetime, float]] = None, 
-    path: str = '/', 
-    domain: Optional[str] = None, 
-    secure: bool = False, 
-    httponly: bool = False, 
+    key: str,
+    value: str = '',
+    max_age: Optional[int] = None,
+    expires: Optional[Union[datetime, float]] = None,
+    path: str = '/',
+    domain: Optional[str] = None,
+    secure: bool = False,
+    httponly: bool = False,
     samesite: Optional[str] = 'Lax'
 )
 
 # Delete a cookie
 response.delete_cookie(
-    key: str, 
-    path: str = '/', 
+    key: str,
+    path: str = '/',
     domain: Optional[str] = None,
     secure: bool = False,
     httponly: bool = False,
@@ -1121,7 +1121,7 @@ def internal_error(error):
 
 #### Exception Handlers
 
-```python
+````python
 class ValidationError(Exception):
     pass
 
@@ -1139,11 +1139,12 @@ def handle_exception(e):
     # Pass through HTTP errors
     if hasattr(e, "get_response"):
         return e.get_response()
-    
+
     # Generic error for everything else
     return {"error": "Something went wrong"}, 500
-```
-```
+````
+
+````
 
 ### Using `abort()`
 
@@ -1162,7 +1163,7 @@ def admin():
     if not is_admin():
         abort(403, 'Admin access required')
     return {'message': 'Admin panel'}
-```
+````
 
 ### Complete Error Handling Example
 
@@ -1613,4 +1614,4 @@ print(bustapi.get_debug_info())      # Detailed version info
 
 ---
 
-_This documentation covers BustAPI version 0.13.0. For the latest updates, visit the [official documentation](https://grandpaej.github.io/BustAPI/)._
+_This documentation covers BustAPI version 0.13.0. For the latest updates, visit the [official documentation](https://rustxpy.github.io/BustAPI/)._
