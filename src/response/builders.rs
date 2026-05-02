@@ -53,8 +53,7 @@ impl ResponseData {
 
     /// Create JSON response with pre-serialized content
     pub fn json_static(json: &'static str) -> Self {
-        let mut headers = Vec::new();
-        headers.push(("Content-Type".to_string(), "application/json".to_string()));
+        let headers = vec![("Content-Type".to_string(), "application/json".to_string())];
         Self {
             status: StatusCode::OK,
             headers,

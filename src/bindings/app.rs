@@ -5,6 +5,8 @@ use pyo3::prelude::*;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 
+type ResponseTuple = (String, u16, Vec<(String, String)>);
+
 use crate::server::{start_server, AppState, FastRouteHandler, ServerConfig};
 
 /// Python wrapper for the BustAPI application
@@ -314,10 +316,6 @@ impl PyBustApp {
             let _ = tracing_subscriber::fmt()
                 .with_env_filter("debug,actix_server=info,actix_web=debug,notify=debug")
                 .try_init();
-        } else if debug {
-            let _ = tracing_subscriber::fmt()
-                .with_env_filter("info,actix_server=error,actix_web=error")
-                .try_init();
         } else {
             let _ = tracing_subscriber::fmt()
                 .with_env_filter("info,actix_server=error,actix_web=error")
@@ -387,7 +385,7 @@ impl PyBustApp {
         query_string: &str,
         headers: std::collections::HashMap<String, String>,
         body: Vec<u8>,
-    ) -> PyResult<(String, u16, Vec<(String, String)>)> {
+    ) -> PyResult<ResponseTuple> {
         let state = self.state.clone();
         let method_enum = std::str::FromStr::from_str(method)
             .map_err(|_| pyo3::exceptions::PyValueError::new_err("Invalid HTTP method"))?;

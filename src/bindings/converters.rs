@@ -92,7 +92,7 @@ pub fn convert_py_result_to_response(
     }
 
     // Check if tuple (body, status) or (body, status, headers)
-    if let Ok(tuple) = result_bound.downcast::<PyTuple>() {
+    if let Ok(tuple) = result_bound.cast::<PyTuple>() {
         match tuple.len() {
             2 => {
                 if let (Ok(body), Ok(status)) = (
@@ -202,11 +202,11 @@ use serde::ser::{Serialize, SerializeMap, SerializeSeq, Serializer};
 /// Convert Python object to response body bytes
 pub fn python_to_response_body(py: Python, obj: Py<PyAny>) -> String {
     let obj_bound = obj.bind(py);
-    if let Ok(bytes) = obj_bound.downcast::<PyBytes>() {
+    if let Ok(bytes) = obj_bound.cast::<PyBytes>() {
         return String::from_utf8_lossy(bytes.as_bytes()).to_string();
     }
 
-    if let Ok(string) = obj_bound.downcast::<PyString>() {
+    if let Ok(string) = obj_bound.cast::<PyString>() {
         return string.to_string();
     }
 
@@ -246,28 +246,28 @@ impl<'a> Serialize for PyJson<'a> {
             return serializer.serialize_none();
         }
 
-        if let Ok(s) = obj.downcast::<PyString>() {
+        if let Ok(s) = obj.cast::<PyString>() {
             return serializer.serialize_str(s.to_string_lossy().as_ref());
         }
 
-        if let Ok(b) = obj.downcast::<PyBool>() {
+        if let Ok(b) = obj.cast::<PyBool>() {
             return serializer.serialize_bool(b.is_true());
         }
 
-        if let Ok(i) = obj.downcast::<PyInt>() {
+        if let Ok(i) = obj.cast::<PyInt>() {
             if let Ok(val) = i.extract::<i64>() {
                 return serializer.serialize_i64(val);
             }
             return serializer.serialize_str(&i.to_string());
         }
 
-        if let Ok(f) = obj.downcast::<PyFloat>() {
+        if let Ok(f) = obj.cast::<PyFloat>() {
             if let Ok(val) = f.extract::<f64>() {
                 return serializer.serialize_f64(val);
             }
         }
 
-        if let Ok(l) = obj.downcast::<PyList>() {
+        if let Ok(l) = obj.cast::<PyList>() {
             let mut seq = serializer.serialize_seq(Some(l.len()))?;
             for item in l {
                 seq.serialize_element(&PyJson(&item))?;
@@ -275,7 +275,7 @@ impl<'a> Serialize for PyJson<'a> {
             return seq.end();
         }
 
-        if let Ok(t) = obj.downcast::<PyTuple>() {
+        if let Ok(t) = obj.cast::<PyTuple>() {
             let mut seq = serializer.serialize_seq(Some(t.len()))?;
             for item in t {
                 seq.serialize_element(&PyJson(&item))?;
@@ -283,7 +283,7 @@ impl<'a> Serialize for PyJson<'a> {
             return seq.end();
         }
 
-        if let Ok(d) = obj.downcast::<PyDict>() {
+        if let Ok(d) = obj.cast::<PyDict>() {
             let mut map = serializer.serialize_map(Some(d.len()))?;
             for (k, v) in d {
                 let key_str = k.extract::<String>().map_err(serde::ser::Error::custom)?;
