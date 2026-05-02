@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "bustapi"
-version = "0.12.0"
+version = "0.13.0"
 description = "High-performance Python web framework with Rust backend"
 authors = [
     {name = "GrandpaEJ", email = ""}
@@ -110,7 +110,7 @@ line_length = 88
 known_first_party = ["bustapi"]
 
 [tool.mypy]
-python_version = "3.8"
+python_version = "3.10"
 strict = true
 
 [tool.ruff]
