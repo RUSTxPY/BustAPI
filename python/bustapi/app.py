@@ -193,6 +193,14 @@ class BustAPI(
                         if isinstance(rv, tuple)
                         else self._make_response(rv)
                     )
+        
+        # If it's an HTTPException, it might have its own response logic
+        if hasattr(exception, "get_response"):
+            try:
+                return exception.get_response()
+            except Exception:
+                pass
+
         status = getattr(exception, "code", 500) if hasattr(exception, "code") else 500
         try:
             return Response(f"Internal Server Error: {str(exception)}", status=status)

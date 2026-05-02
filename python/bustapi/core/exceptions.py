@@ -19,7 +19,9 @@ class HTTPException(BustAPIException):
     This exception is raised when an HTTP error response should be returned.
     """
 
-    def __init__(self, code: int, description: Optional[str] = None, response=None):
+    def __init__(
+        self, code: int, description: Optional[str] = None, response=None, **kwargs
+    ):
         """
         Initialize HTTP exception.
 

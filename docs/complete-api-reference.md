@@ -1606,11 +1606,11 @@ app.run(
 ```python
 import bustapi
 
-print(bustapi.__version__)           # '0.3.1'
-print(bustapi.get_version())         # '0.3.1'
+print(bustapi.__version__)           # '0.13.0'
+print(bustapi.get_version())         # '0.13.0'
 print(bustapi.get_debug_info())      # Detailed version info
 ```
 
 ---
 
-_This documentation covers BustAPI version 0.3.1. For the latest updates, visit the [official documentation](https://grandpaej.github.io/BustAPI/)._
+_This documentation covers BustAPI version 0.13.0. For the latest updates, visit the [official documentation](https://grandpaej.github.io/BustAPI/)._
