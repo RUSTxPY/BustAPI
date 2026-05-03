@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// A high-performance rate limiter using DashMap for concurrent access
-#[pyclass(name = "PyRateLimiter")]
+#[pyclass(name = "PyRateLimiter", from_py_object)]
 #[derive(Clone)]
 pub struct PyRateLimiter {
     // key -> (timestamp, count)

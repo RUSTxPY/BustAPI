@@ -9,13 +9,13 @@ use crate::bindings::converters::*;
 use pyo3::types::PyBytes;
 
 /// Python wrapper for HTTP requests
-#[pyclass]
+#[pyclass(skip_from_py_object)]
 pub struct PyRequest {
     pub(crate) inner: crate::request::RequestData,
 }
 
 /// Python wrapper for uploaded files
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct PyUploadedFile {
     filename: String,

@@ -9,20 +9,20 @@ crate-type = ["cdylib"]
 
 [dependencies]
 # Actix-web (replaces Hyper for better performance)
-actix-web = "4"
-actix-rt = "2"
-actix-http = "3"
+actix-web = "4.13"
+actix-rt = "2.10"
+actix-http = "3.9"
 actix-files = "0.6"
 actix-ws = "0.2.5"
 
 # PyO3 with latest version for Python 3.14 support
-pyo3 = { version = "0.27", features = ["extension-module", "abi3-py310"] }
-# Use pyo3-async-runtimes (compatible with pyo3 0.27)
-pyo3-async-runtimes = { version = "0.27", features = ["tokio-runtime"] }
+pyo3 = { version = "0.28", features = ["extension-module", "abi3-py310"] }
+# Use pyo3-async-runtimes (compatible with pyo3 0.28)
+pyo3-async-runtimes = { version = "0.28", features = ["tokio-runtime"] }
 
 # Async runtime
-tokio = { version = "1.0", features = ["full"] }
-futures = "0.3"
+tokio = { version = "1.52", features = ["full"] }
+futures = "0.3.31"
 cookie = { version = "0.18", features = ["signed", "secure", "percent-encode"] }
 percent-encoding = "2.3"
 sha2 = "0.10"
@@ -37,9 +37,9 @@ rand = "0.8"
 # Utilities
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-bytes = "1.0"
+bytes = "1.10"
 http = "0.2"
-url = "2.0"
+url = "2.5"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1.0"
@@ -63,7 +63,7 @@ default = ["mimalloc"]
 
 
 [build-dependencies]
-pyo3-build-config = "0.27"
+pyo3-build-config = "0.28"
 
 [profile.release]
 lto = true

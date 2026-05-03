@@ -1,7 +1,7 @@
 use pyo3::prelude::*;
 
 /// Configuration for WebSocket routes
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone, Debug, Default)]
 pub struct WebSocketConfig {
     /// Maximum message size in bytes (RAM limit)

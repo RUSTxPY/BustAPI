@@ -8,7 +8,7 @@ use tokio::sync::mpsc;
 use crate::websocket::WebSocketMessage;
 
 /// Python-accessible WebSocket session wrapper
-#[pyclass(name = "WebSocketConnection")]
+#[pyclass(name = "WebSocketConnection", from_py_object)]
 #[derive(Clone)]
 pub struct PyWebSocketConnection {
     /// Session ID
@@ -66,7 +66,7 @@ impl PyWebSocketConnection {
 }
 
 /// Python callable WebSocket handler wrapper
-#[pyclass(name = "WebSocketHandler")]
+#[pyclass(name = "WebSocketHandler", skip_from_py_object)]
 pub struct PyWebSocketHandler {
     /// Python handler callback
     handler: Py<PyAny>,
