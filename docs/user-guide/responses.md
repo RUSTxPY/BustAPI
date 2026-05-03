@@ -109,9 +109,9 @@ def logout():
     return resp
 ```
 
-## Streaming Responses
+### StreamingResponse
 
-You can stream data to the client using `StreamingResponse`. This supports both synchronous and asynchronous iterators.
+You can stream data to the client using `StreamingResponse`. This is highly efficient as it uses the Rust backend to poll your iterator without blocking other requests. It supports both synchronous and asynchronous iterators.
 
 ```python
 from bustapi import StreamingResponse
@@ -124,8 +124,27 @@ async def fast_stream():
 
 @app.route("/stream")
 async def stream():
+    # Rust handles the streaming polling in the background
     return StreamingResponse(fast_stream(), media_type="text/plain")
 ```
+
+### FileResponse
+
+For serving files efficiently, use `FileResponse`. It uses the Rust backend's zero-copy file serving (via `actix-files`), making it significantly faster than reading files into memory in Python.
+
+```python
+from bustapi import FileResponse
+
+@app.route("/download")
+def download():
+    return FileResponse(
+        path="path/to/large_file.zip",
+        media_type="application/zip",
+        filename="custom_name.zip"
+    )
+```
+
+`FileResponse` also automatically supports **HTTP Range Requests**, allowing browsers to seek through videos or resume large downloads.
 
 ## Redirections & Errors
 
