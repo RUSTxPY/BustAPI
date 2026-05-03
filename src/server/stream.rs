@@ -20,7 +20,7 @@ pub struct PythonStream {
 }
 
 // Safety: Py<PyAny> is generally Send if we hold the GIL when accessing it,
-// and we are using spawn_blocking or into_future which handles thread safety.
+// and we are using spawn_blocking which handles thread safety.
 unsafe impl Send for PythonStream {}
 
 impl PythonStream {
@@ -79,56 +79,44 @@ impl Stream for PythonStream {
                 }
 
                 StreamMode::Async => {
-                    // Async Iterator: Use pyo3-async-runtimes
+                    // Async Iterator: Use BustAPI's async_to_sync to run on background loop
                     Box::pin(async move {
-                        // We need to call __anext__ and await the returned coroutine
-                        // This requires holding GIL to call __anext__, then converting awaitable to Rust Future
-
-                        let future_result = Python::attach(|py| {
-                            let iter_bound = iterator.bind(py);
-                            match iter_bound.call_method0("__anext__") {
-                                Ok(awaitable) => {
-                                    // Convert python awaitable to rust future
-                                    // We use pyo3_async_runtimes::tokio::into_future
-                                    match pyo3_async_runtimes::tokio::into_future(awaitable) {
-                                        Ok(f) => Ok(f),
-                                        Err(e) => Err(e),
+                        let res = tokio::task::spawn_blocking(move || {
+                            Python::attach(|py| {
+                                let iter_bound = iterator.bind(py);
+                                match iter_bound.call_method0("__anext__") {
+                                    Ok(awaitable) => {
+                                        if let Ok(utils) = py.import("bustapi.utils") {
+                                            match utils.call_method1("async_to_sync", (awaitable,)) {
+                                                Ok(item) => process_item(py, item),
+                                                Err(e) => {
+                                                    if e.is_instance_of::<PyStopAsyncIteration>(py) {
+                                                        None
+                                                    } else {
+                                                        Some(Err(e))
+                                                    }
+                                                }
+                                            }
+                                        } else {
+                                            Some(Err(PyErr::new::<PyRuntimeError, _>("Could not import bustapi.utils")))
+                                        }
                                     }
-                                }
-                                Err(e) => Err(e),
-                            }
-                        });
-
-                        match future_result {
-                            Ok(f) => {
-                                // Await the future
-                                match f.await {
-                                    Ok(item) => {
-                                        // Process the item (must re-acquire GIL to inspect item?)
-                                        // item is PyObject (or whatever into_future returns? default is PyObject)
-                                        let item_obj: Py<PyAny> = item;
-                                        Python::attach(|py| {
-                                            process_item(py, item_obj.into_bound(py))
-                                        })
-                                    }
-                                    Err(e) => Python::attach(|py| {
+                                    Err(e) => {
                                         if e.is_instance_of::<PyStopAsyncIteration>(py) {
                                             None
                                         } else {
                                             Some(Err(e))
                                         }
-                                    }),
+                                    }
                                 }
-                            }
-                            Err(e) => Python::attach(|py| {
-                                if e.is_instance_of::<PyStopAsyncIteration>(py) {
-                                    None
-                                } else {
-                                    Some(Err(e))
-                                }
-                            }),
+                            })
+                        }).await;
+
+                        match res {
+                            Ok(ok) => ok,
+                            Err(_) => Some(Err(PyErr::new::<PyRuntimeError, _>("Task Join Error"))),
                         }
-                    })
+                    }) as StreamFuture
                 }
             };
 

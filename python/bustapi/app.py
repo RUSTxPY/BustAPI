@@ -223,10 +223,16 @@ class BustAPI(
             self.logger.error(f"Error in 404 fallback: {e}")
             return ("Not Found", 404, {"Content-Type": "text/plain"})
 
-    def _response_to_rust_format(self, response: Response) -> tuple:
+    def _response_to_rust_format(self, response: Response) -> Any:
         """
-        Convert Python Response object to format expected by Rust (body, status, headers).
+        Convert Python Response object to format expected by Rust.
+        If it's a special response (Streaming, File), return the object itself.
+        Otherwise return (body, status, headers) tuple.
         """
+        # Preserve special response types for Rust backend
+        if hasattr(response, "content") or hasattr(response, "path"):
+            return response
+
         if hasattr(response, "get_data"):
             body = response.get_data()
         else:

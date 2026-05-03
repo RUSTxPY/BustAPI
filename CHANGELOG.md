@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented here.
 
+## [0.13.1] - 2026-05-03
+
+### Fixed
+- **StreamingResponse Support**: Fixed a regression in v0.13.0 where `StreamingResponse` and `FileResponse` were returning empty bodies due to over-strict Python-to-Rust conversion.
+- **Async Streaming Stability**: Refactored async stream polling to use the global background event loop, ensuring robust support for async generators (including those using `asyncio.sleep`) within Actix-web worker threads.
+
 ## [0.13.0] - 2026-05-02
 
 ### Added
