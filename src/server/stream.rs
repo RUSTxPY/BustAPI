@@ -87,10 +87,12 @@ impl Stream for PythonStream {
                                 match iter_bound.call_method0("__anext__") {
                                     Ok(awaitable) => {
                                         if let Ok(utils) = py.import("bustapi.utils") {
-                                            match utils.call_method1("async_to_sync", (awaitable,)) {
+                                            match utils.call_method1("async_to_sync", (awaitable,))
+                                            {
                                                 Ok(item) => process_item(py, item),
                                                 Err(e) => {
-                                                    if e.is_instance_of::<PyStopAsyncIteration>(py) {
+                                                    if e.is_instance_of::<PyStopAsyncIteration>(py)
+                                                    {
                                                         None
                                                     } else {
                                                         Some(Err(e))
@@ -98,7 +100,9 @@ impl Stream for PythonStream {
                                                 }
                                             }
                                         } else {
-                                            Some(Err(PyErr::new::<PyRuntimeError, _>("Could not import bustapi.utils")))
+                                            Some(Err(PyErr::new::<PyRuntimeError, _>(
+                                                "Could not import bustapi.utils",
+                                            )))
                                         }
                                     }
                                     Err(e) => {
@@ -110,7 +114,8 @@ impl Stream for PythonStream {
                                     }
                                 }
                             })
-                        }).await;
+                        })
+                        .await;
 
                         match res {
                             Ok(ok) => ok,
