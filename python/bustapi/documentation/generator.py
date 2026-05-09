@@ -382,9 +382,9 @@ class BustAPIDocs:
                                 "content": {"application/json": {"schema": schema_ref}},
                             }
                             if b_default.description:
-                                operation["requestBody"][
-                                    "description"
-                                ] = b_default.description
+                                operation["requestBody"]["description"] = (
+                                    b_default.description
+                                )
                             path_item[method_lower] = operation
                             continue
 
