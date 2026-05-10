@@ -3,75 +3,56 @@ import time
 import requests
 import os
 import signal
+import sys
 
-# 1. Start the app
-print("Starting Turbomax App...")
-app_process = subprocess.Popen([".venv/bin/python", "benchmarks/turbomax_app.py"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-time.sleep(2) # wait for app to start
+# Turbomax Benchmark Runner v2.0
+print("Starting Turbomax App (Optimized)...")
+env = os.environ.copy()
+env["PYTHONPATH"] = "."
+app_process = subprocess.Popen(
+    [sys.executable, "benchmarks/turbomax_app.py"], 
+    stdout=subprocess.DEVNULL, 
+    stderr=subprocess.DEVNULL,
+    env=env
+)
+time.sleep(2)
 
 try:
-    # 2. Get JWT token
-    print("Logging in to get JWT token...")
+    print("Authenticating...")
     session = requests.Session()
+    resp = session.post("http://127.0.0.1:8080/login")
     
-    # Retry mechanism
-    max_retries = 10
-    resp = None
-    for i in range(max_retries):
-        try:
-            resp = session.post("http://127.0.0.1:8080/login")
-            break
-        except requests.exceptions.ConnectionError:
-            print(f"Waiting for app to start... (Attempt {i+1}/{max_retries})")
-            time.sleep(1)
-            
-    if not resp:
-        raise Exception("Failed to connect to app")
+    if not resp.ok:
+        raise Exception(f"Login failed: {resp.status_code}")
         
     cookies = resp.cookies.get_dict()
     cookie_header = "; ".join([f"{k}={v}" for k, v in cookies.items()])
-    print(f"Cookie: {cookie_header}")
+    print(f"Authentication successful. Token acquired.")
+
+    def run_wrk(name, url):
+        print(f"\n>>> Running Benchmark: {name}")
+        print(f"Target: {url}")
+        wrk_cmd = [
+            "wrk", "-t2", "-c10", "-d15s",
+            "-H", f"Cookie: {cookie_header}",
+            url
+        ]
+        res = subprocess.run(wrk_cmd, capture_output=True, text=True)
+        print(res.stdout)
+        return f"\n=== {name} ===\n{res.stdout}"
 
     results = []
-
-    # 3a. Run wrk on /api/business_logic (jsonify route)
-    print("\n=== Route 1: /api/business_logic (jsonify) ===")
-    wrk_cmd = [
-        "wrk",
-        "-t2",
-        "-c10",
-        "-d20s",
-        "-H", f"Cookie: {cookie_header}",
-        "http://127.0.0.1:8080/api/business_logic?sort_by=name"
-    ]
-    result = subprocess.run(wrk_cmd, capture_output=True, text=True)
-    print(result.stdout)
-    results.append("=== Route 1: /api/business_logic (jsonify) ===\n")
-    results.append(result.stdout)
-
-    # 3b. Run wrk on /api/business_logic_raw (raw dict)
-    print("\n=== Route 2: /api/business_logic_raw (raw dict → Rust serialization) ===")
-    wrk_cmd = [
-        "wrk",
-        "-t2",
-        "-c10",
-        "-d20s",
-        "-H", f"Cookie: {cookie_header}",
-        "http://127.0.0.1:8080/api/business_logic_raw?sort_by=name"
-    ]
-    result = subprocess.run(wrk_cmd, capture_output=True, text=True)
-    print(result.stdout)
-    results.append("\n=== Route 2: /api/business_logic_raw (raw dict → Rust serialization) ===\n")
-    results.append(result.stdout)
+    # Test Route 1
+    results.append(run_wrk("Route 1: jsonify (Deferred Serialization)", "http://127.0.0.1:8080/api/business_logic?sort_by=name"))
     
-    # 4. Save results
-    os.makedirs("benchmarks", exist_ok=True)
+    # Test Route 2
+    results.append(run_wrk("Route 2: raw dict (Zero-Copy Rust Serialization)", "http://127.0.0.1:8080/api/business_logic_raw?sort_by=name"))
+    
     with open("benchmarks/turbomax_baseline.txt", "w") as f:
         f.writelines(results)
-    print("Saved results to benchmarks/turbomax_baseline.txt")
+    print("\n✅ All results saved to benchmarks/turbomax_baseline.txt")
 
 finally:
-    # 5. Kill app
-    print("Cleaning up app...")
+    print("Shutting down app...")
     app_process.send_signal(signal.SIGINT)
     app_process.wait()
