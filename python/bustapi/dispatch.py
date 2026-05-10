@@ -148,6 +148,8 @@ def create_sync_wrapper(app: "BustAPI", handler: Callable, rule: str) -> Callabl
 
     @wraps(handler)
     def wrapper(rust_request, path_params=None):
+        request = None
+        token = None
         try:
             # 1. Request + Context (unavoidable — Python needs the request object)
             request = _from_rust(rust_request)
@@ -174,7 +176,6 @@ def create_sync_wrapper(app: "BustAPI", handler: Callable, rule: str) -> Callabl
 
             # 4. Main request processing
             if _has_middleware:
-                # ---- PATH WITH MIDDLEWARE ----
                 mw_response = app.middleware_manager.process_request(request)
                 if mw_response:
                     response = mw_response
@@ -294,11 +295,41 @@ def create_sync_wrapper(app: "BustAPI", handler: Callable, rule: str) -> Callabl
                                 headers_list.append(("Set-Cookie", cookie_val))
                             return (result, 200, headers_list)
 
-                    # Response object fast path (e.g., from jsonify())
+                    # Lightweight _JsonResponse fast path (from updated jsonify)
+                    elif hasattr(result, 'raw_data'):
+                        raw = result.raw_data
+                        # If no status code change and no custom headers, and no cookies, treat as raw fast type
+                        if result.status_code == 200 and result.headers is None and not is_modified and not getattr(result, '_cookies', None):
+                            if type(raw) in _FAST_TYPES:
+                                return raw
+                        
+                        # Otherwise, return as tuple for Rust to handle
+                        status = result.status_code
+                        headers_list = result.headers.items() if result.headers else [("Content-Type", "application/json")]
+                        
+                        if is_modified:
+                            cookie_val = _session_cookie(app, session)
+                            if cookie_val:
+                                headers_list.append(("Set-Cookie", cookie_val))
+                        
+                        # Handle cookies from set_cookie calls
+                        if hasattr(result, '_cookies') and result._cookies:
+                            for c in result._cookies:
+                                # Simple cookie format: (key, value, ...)
+                                # For now just append as Set-Cookie header
+                                # In a real implementation we would format this properly
+                                headers_list.append(("Set-Cookie", f"{c[0]}={c[1]}"))
+                                
+                        return (raw, status, headers_list)
+
+                    # Response object fast path (e.g., legacy objects)
                     elif hasattr(result, 'status_code') and hasattr(result, 'get_data'):
                         if is_modified:
                             cookie_val = _session_cookie(app, session)
                             if cookie_val:
+                                if result.headers is None:
+                                    from .http.headers import Headers
+                                    result.headers = Headers()
                                 result.headers.add("Set-Cookie", cookie_val)
                         return _to_rust(result)
 
@@ -333,7 +364,10 @@ def create_sync_wrapper(app: "BustAPI", handler: Callable, rule: str) -> Callabl
                             async_to_sync(res)
                     except:
                         pass
-            _ctx_reset(token)
+            if token is not None:
+                _ctx_reset(token)
+            if request is not None:
+                request._reset()
 
     return wrapper
 
@@ -355,11 +389,12 @@ def create_async_wrapper(app: "BustAPI", handler: Callable, rule: str) -> Callab
     @wraps(handler)
     def wrapper(rust_request):
         async def run_logic():
-            request = Request._from_rust_request(rust_request)
-            request.app = app
-            token = _request_ctx.set(request)
-
+            request = None
+            token = None
             try:
+                request = Request._from_rust_request(rust_request)
+                request.app = app
+                token = _request_ctx.set(request)
                 session = None
                 if app.secret_key:
                     session = app.session_interface.open_session(app, request)
@@ -492,7 +527,10 @@ def create_async_wrapper(app: "BustAPI", handler: Callable, rule: str) -> Callab
                                 await res
                         except Exception:
                             pass
-                _request_ctx.reset(token)
+                if token is not None:
+                    _request_ctx.reset(token)
+                if request is not None:
+                    request._reset()
 
         return async_to_sync(run_logic())
 
