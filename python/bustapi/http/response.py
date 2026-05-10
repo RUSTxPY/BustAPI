@@ -273,7 +273,49 @@ def make_response(*args: Any) -> Response:
     return Response(args)
 
 
-def jsonify(*args: Any, **kwargs: Any) -> Response:
+class _JsonResponse:
+    """
+    Lightweight JSON response wrapper.
+    Defers serialization to Rust's zero-copy path if possible.
+    """
+    __slots__ = ('raw_data', 'status_code', 'headers', '_cookies')
+
+    def __init__(self, data: Any, status: int = 200, headers: Optional[Union[Dict, Headers]] = None):
+        self.raw_data = data
+        self.status_code = status
+        self.headers = Headers(headers) if headers else None
+        self._cookies = []
+
+    def get_data(self, as_text: bool = False) -> Union[bytes, str]:
+        """Fall back to Python serialization if Rust path is bypassed."""
+        import json
+        encoded = json.dumps(self.raw_data).encode("utf-8")
+        if as_text:
+            return encoded.decode("utf-8")
+        return encoded
+
+    def set_cookie(
+        self,
+        key: str,
+        value: str = "",
+        max_age: Optional[int] = None,
+        expires: Optional[Union[datetime, int, float]] = None,
+        path: str = "/",
+        domain: Optional[str] = None,
+        secure: bool = False,
+        httponly: bool = False,
+        samesite: Optional[str] = None,
+    ) -> None:
+        """Add a cookie to the response."""
+        self._cookies.append((key, value, max_age, expires, path, domain, secure, httponly, samesite))
+        # Note: Set-Cookie header generation is handled in dispatch.py or on-demand
+        # For simplicity in this lightweight wrapper, we just store them.
+
+    def __repr__(self) -> str:
+        return f"<_JsonResponse data={repr(self.raw_data)} status={self.status_code}>"
+
+
+def jsonify(*args: Any, **kwargs: Any) -> Any:
     if args and kwargs:
         raise TypeError("jsonify() behavior undefined when passed both args and kwargs")
     elif len(args) == 1:
@@ -281,4 +323,4 @@ def jsonify(*args: Any, **kwargs: Any) -> Response:
     else:
         data = args or kwargs
 
-    return Response(data, content_type="application/json")
+    return _JsonResponse(data)

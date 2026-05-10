@@ -83,19 +83,40 @@ _g_ctx: ContextVar[Optional[Dict[str, Any]]] = ContextVar("g", default=None)
 class Request:
     """
     Flask-compatible request object that wraps the Rust request data.
-
-    This object provides access to request data including headers, form data,
-    JSON data, files, and query parameters in a Flask-compatible way.
     """
 
-    def __init__(self, rust_request=None):
-        """
-        Initialize request object.
+    __slots__ = (
+        "_rust_request",
+        "_json_cache",
+        "_form_cache",
+        "_files_cache",
+        "_args_cache",
+        "_cookies_cache",
+        "_headers_cache",
+        "_user",
+        "app",
+        "session",
+        "jwt_identity",
+        "jwt_claims",
+        "url_rule",
+        "view_args",
+        "blueprints",
+    )
 
-        Args:
-            rust_request: Rust PyRequest object from the backend
-        """
+    _pool = []
+    _MAX_POOL_SIZE = 128
+
+    def __init__(self, rust_request=None):
         self._rust_request = rust_request
+        self.app = None
+        self.session = None
+        self.jwt_identity = None
+        self.jwt_claims = None
+        self.url_rule = None
+        self.view_args = None
+        self.blueprints = None
+
+        # Caches
         self._json_cache = None
         self._form_cache = None
         self._files_cache = None
@@ -106,8 +127,35 @@ class Request:
 
     @classmethod
     def _from_rust_request(cls, rust_request) -> "Request":
-        """Create Request instance from Rust request object."""
+        """Get a Request instance from pool or create new."""
+        if cls._pool:
+            req = cls._pool.pop()
+            req._rust_request = rust_request
+            return req
         return cls(rust_request)
+
+    def _reset(self):
+        """Reset the request object for re-use in pool."""
+        self._rust_request = None
+        self.app = None
+        self.session = None
+        self.jwt_identity = None
+        self.jwt_claims = None
+        self.url_rule = None
+        self.view_args = None
+        self.blueprints = None
+        
+        # Caches
+        self._json_cache = None
+        self._form_cache = None
+        self._files_cache = None
+        self._args_cache = None
+        self._cookies_cache = None
+        self._headers_cache = None
+        self._user = None
+        
+        if len(self.__class__._pool) < self.__class__._MAX_POOL_SIZE:
+            self.__class__._pool.append(self)
 
     @property
     def method(self) -> str:

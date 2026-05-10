@@ -188,6 +188,36 @@ pub fn convert_py_result_to_response(
     }
 
     // Check for Response object (duck typing)
+    if let Ok(raw_data) = result_bound.getattr("raw_data") {
+        // High-performance path for _JsonResponse: serialize raw data directly in Rust
+        let serializer = crate::bindings::converters::PyJson(&raw_data);
+        if let Ok(vec) = serde_json::to_vec(&serializer) {
+            let status = if let Ok(sc) = result_bound.getattr("status_code") {
+                sc.extract::<u16>().unwrap_or(200)
+            } else {
+                200
+            };
+
+            let mut resp = ResponseData::with_body(vec);
+            resp.set_status(StatusCode::from_u16(status).unwrap_or(StatusCode::OK));
+            resp.set_header("Content-Type", "application/json");
+
+            // Extract headers if present
+            if let Ok(headers) = result_bound.getattr("headers") {
+                if let Ok(items) = headers.call_method0("items") {
+                    if let Ok(iter) = items.try_iter() {
+                        for item in iter.flatten() {
+                            if let Ok((k, v)) = item.extract::<(String, String)>() {
+                                resp.add_header(&k, &v);
+                            }
+                        }
+                    }
+                }
+            }
+            return resp;
+        }
+    }
+
     if let Ok(status_code) = result_bound.getattr("status_code") {
         if let Ok(headers) = result_bound.getattr("headers") {
             if let Ok(get_data) = result_bound.getattr("get_data") {
