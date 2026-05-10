@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="night">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}AnimeBust - High Performance Anime Hub{% endblock %}</title>
+    <!-- Tailwind CSS and DaisyUI -->
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.10/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Outfit:wght@400;700&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #0f172a;
+            min-height: 100vh;
+        }
+        
+        .heading-font {
+            font-family: 'Outfit', sans-serif;
+        }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .anime-gradient {
+            background: linear-gradient(90deg, #6366f1 0%, #a855f7 50%, #ec4899 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .hover-scale {
+            transition: transform 0.3s ease;
+        }
+        .hover-scale:hover {
+            transform: scale(1.05);
+        }
+    </style>
+</head>
+<body>
+    <!-- Navbar -->
+    <div class="navbar bg-base-100/50 backdrop-blur-md sticky top-0 z-50 border-b border-white/10 px-4 lg:px-20">
+        <div class="navbar-start">
+            <div class="dropdown">
+                <div tabindex="0" role="button" class="btn btn-ghost lg:hidden">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h8m-8 6h16" /></svg>
+                </div>
+                <ul tabindex="0" class="menu menu-sm dropdown-content mt-3 z-[1] p-2 shadow bg-base-100 rounded-box w-52">
+                    <li><a href="/">Home</a></li>
+                    <li><a href="/anime/trending">Trending</a></li>
+                    <li><a href="/dashboard">Dashboard</a></li>
+                </ul>
+            </div>
+            <a class="btn btn-ghost text-2xl font-bold heading-font anime-gradient" href="/">AnimeBust</a>
+        </div>
+        <div class="navbar-center hidden lg:flex">
+            <ul class="menu menu-horizontal px-1 gap-2">
+                <li><a href="/" class="hover:text-primary transition-colors">Home</a></li>
+                <li><a href="/anime/trending" class="hover:text-primary transition-colors">Trending</a></li>
+                <li><a href="/anime/new" class="hover:text-primary transition-colors">New Releases</a></li>
+                <li><a href="/dashboard" class="hover:text-primary transition-colors">Dashboard</a></li>
+            </ul>
+        </div>
+        <div class="navbar-end gap-2">
+            {% if user %}
+            <div class="dropdown dropdown-end">
+                <div tabindex="0" role="button" class="btn btn-ghost btn-circle avatar">
+                    <div class="w-10 rounded-full ring ring-primary ring-offset-base-100 ring-offset-1">
+                        <img src="{{ user.avatar }}" />
+                    </div>
+                </div>
+                <ul tabindex="0" class="menu menu-sm dropdown-content mt-3 z-[1] p-2 shadow bg-base-100 rounded-box w-52 border border-white/10">
+                    <li><div class="px-4 py-2 font-bold text-primary">{{ user.username }}</div></li>
+                    <li><a href="/dashboard">Dashboard</a></li>
+                    <li><a href="/profile">Settings</a></li>
+                    <li><a href="/logout" class="text-error">Logout</a></li>
+                </ul>
+            </div>
+            {% else %}
+            <a href="/login" class="btn btn-primary btn-outline btn-sm rounded-full px-6">Login</a>
+            <a href="/register" class="btn btn-primary btn-sm rounded-full px-6">Sign Up</a>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <main class="container mx-auto px-4 py-10 lg:px-20">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer p-10 bg-base-200 text-base-content border-t border-white/5 lg:px-20">
+        <nav>
+            <h6 class="footer-title">Services</h6> 
+            <a class="link link-hover" href="/anime/trending">Streaming</a>
+            <a class="link link-hover" href="/anime/new">Simulcast</a>
+            <a class="link link-hover">Manga</a>
+        </nav> 
+        <nav>
+            <h6 class="footer-title">Company</h6> 
+            <a class="link link-hover" href="/about">About us</a>
+            <a class="link link-hover">Contact</a>
+            <a class="link link-hover" href="/docs">API Docs</a>
+        </nav> 
+        <nav>
+            <h6 class="footer-title">Legal</h6> 
+            <a class="link link-hover">Terms of use</a>
+            <a class="link link-hover">Privacy policy</a>
+            <a class="link link-hover">Cookie policy</a>
+        </nav>
+    </footer>
+</body>
+</html>

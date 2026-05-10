@@ -17,6 +17,32 @@ pub fn convert_py_result_to_response(
     // Convert result to Bound
     let result_bound = result.bind(py);
 
+    // FAST PATH: bytes or str returned directly (turbo routes returning b'...' or "...")
+    // Check these before any Python attribute lookups which are comparatively expensive
+    if let Ok(bytes) = result_bound.cast::<PyBytes>() {
+        let raw = bytes.as_bytes();
+        let body = std::str::from_utf8(raw)
+            .map(|s| s.as_bytes().to_vec())
+            .unwrap_or_else(|_| raw.to_vec());
+        let mut resp = ResponseData::with_body(body);
+        resp.set_header("Content-Type", "application/json");
+        return resp;
+    }
+
+    if let Ok(s) = result_bound.cast::<PyString>() {
+        let text = s.to_string();
+        let trimmed = text.trim();
+        return if trimmed.starts_with('<') {
+            ResponseData::html(text)
+        } else if trimmed.starts_with('{') || trimmed.starts_with('[') {
+            let mut resp = ResponseData::with_body(text.into_bytes());
+            resp.set_header("Content-Type", "application/json");
+            resp
+        } else {
+            ResponseData::text(text)
+        };
+    }
+
     // FIRST: Check for explicit path attribute (FileResponse optimization)
     if let Ok(path_obj) = result_bound.getattr("path") {
         if let Ok(path_str) = path_obj.extract::<String>() {
@@ -99,9 +125,13 @@ pub fn convert_py_result_to_response(
                     tuple.get_item(0),
                     tuple.get_item(1).and_then(|s| s.extract::<u16>()),
                 ) {
-                    let response_body = python_to_response_body(py, body.unbind());
-                    let mut resp = ResponseData::with_body(response_body.into_bytes());
-                    resp.set_status(StatusCode::from_u16(status).unwrap_or(StatusCode::OK));
+                    let mut resp = ResponseData::with_status(StatusCode::from_u16(status).unwrap_or(StatusCode::OK));
+                    if let Ok(bytes) = body.cast::<PyBytes>() {
+                        resp.body = bytes.as_bytes().to_vec();
+                    } else {
+                        let response_body = python_to_response_body(py, body.unbind());
+                        resp.body = response_body.into_bytes();
+                    }
                     resp.set_header("Content-Type", "application/json");
                     return resp;
                 }
@@ -112,10 +142,17 @@ pub fn convert_py_result_to_response(
                     tuple.get_item(1).and_then(|s| s.extract::<u16>()),
                     tuple.get_item(2),
                 ) {
-                    let response_body = python_to_response_body(py, body.unbind());
                     let status_code = StatusCode::from_u16(status).unwrap_or(StatusCode::OK);
                     let mut resp = ResponseData::with_status(status_code);
                     let mut has_ct = false;
+
+                    // Extract body efficiently without String conversion if it's bytes
+                    if let Ok(bytes) = body.cast::<PyBytes>() {
+                        resp.body = bytes.as_bytes().to_vec();
+                    } else {
+                        let response_body = python_to_response_body(py, body.unbind());
+                        resp.body = response_body.into_bytes();
+                    }
 
                     // Support headers as dict or list of tuples
                     if let Ok(items) = hdrs.call_method0("items") {
@@ -143,7 +180,6 @@ pub fn convert_py_result_to_response(
                     if !has_ct {
                         resp.set_header("Content-Type", "application/json");
                     }
-                    resp.set_body(response_body.into_bytes());
                     return resp;
                 }
             }
@@ -182,6 +218,19 @@ pub fn convert_py_result_to_response(
         }
     }
 
+    // 🔥 Fast path: JSON serialization directly to Vec<u8> (Zero-copy)
+    if result_bound.is_instance_of::<pyo3::types::PyDict>()
+        || result_bound.is_instance_of::<pyo3::types::PyList>()
+        || result_bound.is_instance_of::<pyo3::types::PyTuple>()
+    {
+        let serializer = PyJson(&result_bound);
+        if let Ok(vec) = serde_json::to_vec(&serializer) {
+            let mut resp = ResponseData::with_body(vec);
+            resp.set_header("Content-Type", "application/json");
+            return resp;
+        }
+    }
+
     // Default: treat as response body
     let body = python_to_response_body(py, result);
     let trimmed = body.trim();
@@ -203,7 +252,11 @@ use serde::ser::{Serialize, SerializeMap, SerializeSeq, Serializer};
 pub fn python_to_response_body(py: Python, obj: Py<PyAny>) -> String {
     let obj_bound = obj.bind(py);
     if let Ok(bytes) = obj_bound.cast::<PyBytes>() {
-        return String::from_utf8_lossy(bytes.as_bytes()).to_string();
+        // Fast path: valid UTF-8 bytes (most turbo routes return b'...') — zero extra allocation
+        let raw = bytes.as_bytes();
+        return std::str::from_utf8(raw)
+            .map(|s| s.to_owned())
+            .unwrap_or_else(|_| String::from_utf8_lossy(raw).into_owned());
     }
 
     if let Ok(string) = obj_bound.cast::<PyString>() {

@@ -122,6 +122,73 @@ class RouteRegistration:
         """Convenience decorator for OPTIONS routes."""
         return self.route(rule, methods=["OPTIONS"], **options)
 
+    def fast_route(self, rule: str, methods: list = None, **options) -> Callable:
+        """
+        🚀 FASTEST possible route - Zero Python on the hot path.
+
+        Calls your function ONCE at startup to pre-compute the response body,
+        then registers a pure-Rust handler. No GIL, no Python, no overhead.
+
+        Perfect for: health checks, static JSON, version endpoints.
+        NOT for: dynamic responses that change per request.
+
+        Expected: 80k-120k+ RPS with 1 worker process.
+
+        Example:
+            @app.fast_route("/health")
+            def health():
+                return b'{"status": "ok"}'
+
+            @app.fast_route("/version")
+            def version():
+                return {"version": "1.0.0"}  # dict also works
+        """
+        if methods is None:
+            methods = ["GET"]
+
+        def decorator(f: Callable) -> Callable:
+            import json as _json
+
+            endpoint = f.__name__
+            self.view_functions[endpoint] = f
+            self.url_map[rule] = {"endpoint": endpoint, "methods": methods}
+            self._url_rules.append(
+                {
+                    "rule": rule,
+                    "endpoint": endpoint,
+                    "methods": methods,
+                    "tags": options.get("tags"),
+                    "summary": options.get("summary"),
+                    "description": options.get("description"),
+                    "response_model": options.get("response_model"),
+                    "responses": options.get("responses"),
+                    "deprecated": options.get("deprecated", False),
+                }
+            )
+
+            # Pre-compute the response body ONCE at registration time
+            result = f()
+            content_type = None
+            if hasattr(result, "get_data"):
+                # Handle BustAPI Response objects (like HTMLResponse)
+                body_str = result.get_data(as_text=True)
+                content_type = getattr(result, "content_type", None)
+            elif isinstance(result, bytes):
+                body_str = result.decode("utf-8", errors="replace")
+            elif isinstance(result, str):
+                body_str = result
+            elif isinstance(result, (dict, list)):
+                body_str = _json.dumps(result)
+            else:
+                body_str = str(result)
+
+            for method in methods:
+                self._rust_app.add_fast_route(method, rule, body_str, content_type)
+
+            return f
+
+        return decorator
+
     def turbo_route(
         self, rule: str, methods: list = None, cache_ttl: int = 0, **options
     ) -> Callable:

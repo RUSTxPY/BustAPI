@@ -85,6 +85,11 @@ class SecureCookieSessionInterface(SessionInterface):
     session_class = SecureCookieSession
     session_cookie_name = "session"
 
+    def _get_signer(self, app):
+        if not hasattr(app, "_session_signer"):
+            app._session_signer = Signer(app.secret_key)
+        return app._session_signer
+
     def open_session(self, app, request: Request) -> Optional[SessionMixin]:
         if not app.secret_key:
             return None
@@ -94,7 +99,7 @@ class SecureCookieSessionInterface(SessionInterface):
         if not val:
             return self.session_class()
 
-        signer = Signer(app.secret_key)
+        signer = self._get_signer(app)
 
         # Decode and verify in a single Rust call (JSON+Base64+HMAC)
         try:
@@ -105,41 +110,46 @@ class SecureCookieSessionInterface(SessionInterface):
         except Exception:
             return self.session_class()
 
-    def save_session(self, app, session: SessionMixin, response: Response) -> None:
+    def get_cookie_header_value(self, app, session: SessionMixin) -> Optional[str]:
+        """Generate the Set-Cookie header value without needing a Response object."""
         domain = app.config.get("SESSION_COOKIE_DOMAIN")
         path = app.config.get("SESSION_COOKIE_PATH", "/")
-
-        # If the session is empty/modified, we might want to delete it or update it
+        
         if not session and session.modified:
-            # Delete cookie
-            response.set_cookie(
-                self.session_cookie_name, "", expires=0, domain=domain, path=path
-            )
-            return
+            parts = [f"{self.session_cookie_name}="]
+            parts.append("Expires=Thu, 01 Jan 1970 00:00:00 GMT")
+            if domain: parts.append(f"Domain={domain}")
+            if path: parts.append(f"Path={path}")
+            return "; ".join(parts)
+            
+        if not app.secret_key or not session.modified:
+            return None
+            
+        signer = self._get_signer(app)
+        val = signer.encode_session(self.session_cookie_name, dict(session))
+        
+        parts = [f"{self.session_cookie_name}={val}"]
+        
+        if session.permanent and app.permanent_session_lifetime:
+            expires = datetime.utcnow() + app.permanent_session_lifetime
+            expires_str = expires.strftime("%a, %d %b %Y %H:%M:%S GMT")
+            parts.append(f"Expires={expires_str}")
+            max_age = int(app.permanent_session_lifetime.total_seconds())
+            parts.append(f"Max-Age={max_age}")
+            
+        parts.append("HttpOnly")
+        if domain: parts.append(f"Domain={domain}")
+        if path: parts.append(f"Path={path}")
+        if app.config.get("SESSION_COOKIE_SECURE", False):
+            parts.append("Secure")
+        
+        samesite = app.config.get("SESSION_COOKIE_SAMESITE", "Lax")
+        if samesite:
+            parts.append(f"SameSite={samesite}")
+            
+        return "; ".join(parts)
 
-        if not app.secret_key:
-            return
-
-        if session.modified:
-            # Encode and sign in a single Rust call (Dict → JSON → Base64 → Sign)
-            signer = Signer(app.secret_key)
-            val = signer.encode_session(self.session_cookie_name, dict(session))
-
-            # Handle expiration
-            expires = None
-            max_age = None
-            if session.permanent and app.permanent_session_lifetime:
-                expires = datetime.utcnow() + app.permanent_session_lifetime
-                max_age = int(app.permanent_session_lifetime.total_seconds())
-
-            response.set_cookie(
-                self.session_cookie_name,
-                val,
-                expires=expires,
-                max_age=max_age,
-                httponly=True,
-                domain=domain,
-                path=path,
-                secure=app.config.get("SESSION_COOKIE_SECURE", False),
-                samesite=app.config.get("SESSION_COOKIE_SAMESITE", "Lax"),
-            )
+    def save_session(self, app, session: SessionMixin, response: Response) -> None:
+        val = self.get_cookie_header_value(app, session)
+        if val:
+            response.headers.add("Set-Cookie", val)

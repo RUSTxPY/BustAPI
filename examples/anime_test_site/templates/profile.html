@@ -1,0 +1,131 @@
+{% extends "layout.html" %}
+
+{% block title %}Edit Profile - AnimeBust{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <div class="flex items-center gap-4 mb-10">
+        <a href="/dashboard" class="btn btn-ghost btn-circle"><i class="fas fa-arrow-left"></i></a>
+        <h1 class="text-4xl font-bold heading-font">Profile <span class="anime-gradient">Settings</span></h1>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-10">
+        <!-- Avatar Change -->
+        <div class="lg:col-span-1">
+            <div class="glass-card p-8 rounded-3xl text-center space-y-6">
+                <div class="avatar">
+                    <div class="w-32 rounded-full ring ring-primary ring-offset-base-100 ring-offset-4 relative group">
+                        <img id="avatar-preview" src="{{ user.avatar }}" />
+                        <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-full cursor-pointer">
+                            <i class="fas fa-camera text-2xl"></i>
+                        </div>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="font-bold text-lg">@{{ user.username }}</h3>
+                    <p class="text-xs text-gray-500 mt-1">Profile Avatar</p>
+                </div>
+                <input type="file" id="avatar-input" class="hidden" accept="image/*" onchange="previewImage(event)" />
+                <button class="btn btn-outline btn-primary btn-sm rounded-full px-6" onclick="document.getElementById('avatar-input').click()">Change Image</button>
+            </div>
+        </div>
+
+        <!-- Form Details -->
+        <div class="lg:col-span-2">
+            <div id="profile-success" class="alert alert-success hidden mb-6 rounded-2xl">
+                <i class="fas fa-check-circle"></i>
+                <span>Profile updated successfully!</span>
+            </div>
+
+            <form class="glass-card p-10 rounded-3xl space-y-8" onsubmit="handleUpdate(event)">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text font-bold">Display Name</span></label>
+                        <input type="text" id="upd-username" value="{{ user.username }}" class="input input-bordered bg-white/5 border-white/10 rounded-xl" />
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text font-bold">Email Address</span></label>
+                        <input type="email" id="upd-email" value="{{ user.email }}" class="input input-bordered bg-white/5 border-white/10 rounded-xl" />
+                    </div>
+                </div>
+
+                <div class="divider before:bg-white/5 after:bg-white/5"></div>
+
+                <div class="space-y-4">
+                    <h3 class="text-xl font-bold heading-font">Security</h3>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text font-bold">New Password</span></label>
+                        <input type="password" id="upd-password" placeholder="Leave blank to keep current" class="input input-bordered bg-white/5 border-white/10 rounded-xl" />
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-4 mt-10">
+                    <button type="button" class="btn btn-ghost rounded-xl px-10">Cancel</button>
+                    <button type="submit" class="btn btn-primary rounded-xl px-10 shadow-lg shadow-primary/20">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    async function handleUpdate(event) {
+        event.preventDefault();
+        const username = document.getElementById('upd-username').value;
+        const email = document.getElementById('upd-email').value;
+        const password = document.getElementById('upd-password').value;
+        const successDiv = document.getElementById('profile-success');
+
+        try {
+            const resp = await fetch('/api/profile/update', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({username, email, password})
+            });
+            
+            if (resp.ok) {
+                successDiv.classList.remove('hidden');
+                setTimeout(() => successDiv.classList.add('hidden'), 3000);
+            }
+        } catch (e) {
+            console.error('Update failed', e);
+        }
+    }
+    async function previewImage(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        // Preview locally
+        const reader = new FileReader();
+        reader.onload = function() {
+            const output = document.getElementById('avatar-preview');
+            output.src = reader.result;
+        }
+        reader.readAsDataURL(file);
+
+        // Upload to server
+        const formData = new FormData();
+        formData.append('avatar', file);
+
+        try {
+            const resp = await fetch('/api/profile/avatar', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await resp.json();
+            if (resp.ok) {
+                console.log('Avatar uploaded successfully');
+                // Update all avatars on the page with a cache-buster
+                const newUrl = data.url + '?t=' + new Date().getTime();
+                document.querySelectorAll('img[src*="/storage/user_"]').forEach(img => {
+                    img.src = newUrl;
+                });
+                // Also update the preview image specifically if it has a different src pattern
+                document.getElementById('avatar-preview').src = newUrl;
+            }
+        } catch (e) {
+            console.error('Upload failed', e);
+        }
+    }
+</script>
+{% endblock %}

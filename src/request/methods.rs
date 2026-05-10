@@ -22,6 +22,8 @@ pub struct RequestData {
     pub query_params: HashMap<String, String>,
     pub files: HashMap<String, UploadedFile>,
     pub multipart_form: HashMap<String, String>,
+    /// Pre-parsed cookies (lazily populated on first access)
+    pub cached_cookies: Option<HashMap<String, String>>,
 }
 
 impl RequestData {
@@ -36,6 +38,7 @@ impl RequestData {
             query_params: HashMap::new(),
             files: HashMap::new(),
             multipart_form: HashMap::new(),
+            cached_cookies: None,
         }
     }
 
@@ -45,11 +48,18 @@ impl RequestData {
     }
 
     /// Get a header value by name (case-insensitive)
+    /// Fast path: tries direct key lookup first (headers stored lowercase by Actix extractor).
+    /// Only falls back to linear scan if direct hit misses.
     pub fn get_header(&self, name: &str) -> Option<&String> {
+        // Fast path: Actix stores headers with lowercase keys
         let name_lower = name.to_lowercase();
+        if let Some(v) = self.headers.get(&name_lower) {
+            return Some(v);
+        }
+        // Slow fallback: header was stored with non-lowercase key
         self.headers
             .iter()
-            .find(|(k, _)| k.to_lowercase() == name_lower)
+            .find(|(k, _)| k.eq_ignore_ascii_case(name))
             .map(|(_, v)| v)
     }
 
@@ -104,6 +114,23 @@ impl RequestData {
 
     /// Get cookies from request headers
     pub fn get_cookies(&self) -> HashMap<String, String> {
+        // If we already have cached cookies, return a clone
+        if let Some(ref cached) = self.cached_cookies {
+            return cached.clone();
+        }
+        self.parse_cookies_from_header()
+    }
+
+    /// Get cookies, caching the result for subsequent accesses
+    pub fn get_cookies_cached(&mut self) -> &HashMap<String, String> {
+        if self.cached_cookies.is_none() {
+            self.cached_cookies = Some(self.parse_cookies_from_header());
+        }
+        self.cached_cookies.as_ref().unwrap()
+    }
+
+    /// Internal: parse cookies from the Cookie header
+    fn parse_cookies_from_header(&self) -> HashMap<String, String> {
         let mut cookies = HashMap::new();
 
         if let Some(cookie_header) = self.get_header("cookie") {

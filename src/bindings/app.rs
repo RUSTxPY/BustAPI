@@ -233,8 +233,17 @@ impl PyBustApp {
 
         Ok(())
     }
-    pub fn add_fast_route(&self, method: &str, path: &str, response_body: String) -> PyResult<()> {
-        let fast_handler = FastRouteHandler::new(response_body);
+    pub fn add_fast_route(
+        &self,
+        method: &str,
+        path: &str,
+        response_body: String,
+        content_type: Option<String>,
+    ) -> PyResult<()> {
+        let mut fast_handler = FastRouteHandler::new(response_body);
+        if let Some(ct) = content_type {
+            fast_handler = fast_handler.with_content_type(&ct);
+        }
 
         let state = self.state.clone();
         let method_enum = std::str::FromStr::from_str(method)

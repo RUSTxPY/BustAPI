@@ -8,10 +8,64 @@ from typing import Any, AsyncGenerator, Dict, Optional, Union
 
 
 class ImmutableMultiDict(dict):
-    """Minimal stub for werkzeug.datastructures.ImmutableMultiDict"""
+    """Minimal stub for werkzeug.datastructures.ImmutableMultiDict backed by Rust."""
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, items=None, rust_req=None, getter=None, fallback=None):
+        super().__init__(items or {})
+        self._rust_req = rust_req
+        self._getter = getter
+        self._fallback = fallback
+        self._materialized = rust_req is None
+
+    def _materialize(self):
+        if not self._materialized:
+            if self._rust_req and self._fallback:
+                items = self._fallback()
+                super().update(items)
+            self._materialized = True
+
+    def get(self, key, default=None):
+        if not self._materialized and self._rust_req and self._getter:
+            val = self._getter(key)
+            if val is not None:
+                return val
+            return default
+        return super().get(key, default)
+
+    def __getitem__(self, key):
+        if not self._materialized and self._rust_req and self._getter:
+            val = self._getter(key)
+            if val is not None:
+                return val
+            raise KeyError(key)
+        return super().__getitem__(key)
+
+    def __contains__(self, key):
+        if not self._materialized and self._rust_req and self._getter:
+            return self._getter(key) is not None
+        return super().__contains__(key)
+
+    def keys(self):
+        self._materialize()
+        return super().keys()
+
+    def values(self):
+        self._materialize()
+        return super().values()
+
+    def items(self, multi=False):
+        self._materialize()
+        if multi:
+            return [(k, v) for k, v in super().items()]
+        return super().items()
+
+    def __iter__(self):
+        self._materialize()
+        return super().__iter__()
+
+    def __len__(self):
+        self._materialize()
+        return super().__len__()
 
     def getlist(self, key):
         val = self.get(key)
@@ -46,6 +100,8 @@ class Request:
         self._form_cache = None
         self._files_cache = None
         self._args_cache = None
+        self._cookies_cache = None
+        self._headers_cache = None
         self._user = None
 
     @classmethod
@@ -93,12 +149,13 @@ class Request:
         """Query parameters as ImmutableMultiDict."""
         if self._args_cache is None:
             if self._rust_request:
-                args_dict = self._rust_request.args
-                # Convert to ImmutableMultiDict for Flask compatibility
-                items = [(k, v) for k, v in args_dict.items()]
+                self._args_cache = ImmutableMultiDict(
+                    rust_req=self._rust_request,
+                    getter=self._rust_request.get_arg,
+                    fallback=lambda: [(k, v) for k, v in self._rust_request.args.items()]
+                )
             else:
-                items = []
-            self._args_cache = ImmutableMultiDict(items)
+                self._args_cache = ImmutableMultiDict()
         return self._args_cache
 
     @property
@@ -111,12 +168,13 @@ class Request:
         """Form data as ImmutableMultiDict."""
         if self._form_cache is None:
             if self._rust_request:
-                form_dict = self._rust_request.form()
-                # Convert to ImmutableMultiDict for Flask compatibility
-                items = [(k, v) for k, v in form_dict.items()]
+                self._form_cache = ImmutableMultiDict(
+                    rust_req=self._rust_request,
+                    getter=self._rust_request.get_form,
+                    fallback=lambda: [(k, v) for k, v in self._rust_request.form().items()]
+                )
             else:
-                items = []
-            self._form_cache = ImmutableMultiDict(items)
+                self._form_cache = ImmutableMultiDict()
         return self._form_cache
 
     @property
@@ -201,19 +259,23 @@ class Request:
 
     @property
     def headers(self) -> "EnvironHeaders":
-        """Request headers."""
-        if self._rust_request:
-            headers_dict = self._rust_request.headers
-            return EnvironHeaders(headers_dict)
-        return EnvironHeaders({})
+        """Request headers (cached)."""
+        if self._headers_cache is None:
+            if self._rust_request:
+                self._headers_cache = EnvironHeaders(rust_req=self._rust_request)
+            else:
+                self._headers_cache = EnvironHeaders({})
+        return self._headers_cache
 
     @property
     def cookies(self) -> Dict[str, str]:
-        """Request cookies (parsed in Rust for performance)."""
-        if self._rust_request:
-            # Use Rust implementation for high-performance cookie parsing
-            return self._rust_request.cookies
-        return {}
+        """Request cookies (parsed once in Rust, then cached)."""
+        if self._cookies_cache is None:
+            if self._rust_request:
+                self._cookies_cache = self._rust_request.cookies
+            else:
+                self._cookies_cache = {}
+        return self._cookies_cache
 
     @property
     def environ(self) -> Dict[str, Any]:
@@ -364,11 +426,19 @@ class Request:
 
 class EnvironHeaders:
     """
-    Flask-compatible headers object.
+    Flask-compatible headers object backed by Rust.
     """
 
-    def __init__(self, headers_dict: Dict[str, str]):
-        self._headers = headers_dict
+    def __init__(self, rust_req=None, headers_dict=None):
+        self._rust_req = rust_req
+        self._headers = headers_dict or {}
+        self._materialized = headers_dict is not None or rust_req is None
+
+    def _materialize(self):
+        if not self._materialized:
+            if self._rust_req:
+                self._headers = self._rust_req.headers
+            self._materialized = True
 
     def get(
         self,
@@ -376,24 +446,17 @@ class EnvironHeaders:
         default: Optional[str] = None,
         type_func: Optional[callable] = None,
     ) -> Any:
-        """
-        Get header value.
-
-        Args:
-            key: Header name
-            default: Default value if header not found
-            type_func: Function to convert value
-
-        Returns:
-            Header value, converted if type_func provided
-        """
-        # Case-insensitive header lookup
-        value = None
-        key_lower = key.lower()
-        for header_key, header_value in self._headers.items():
-            if header_key.lower() == key_lower:
-                value = header_value
-                break
+        """Get header value."""
+        if not self._materialized and self._rust_req:
+            value = self._rust_req.get_header(key)
+        else:
+            # Case-insensitive header lookup on materialized dict
+            value = None
+            key_lower = key.lower()
+            for header_key, header_value in self._headers.items():
+                if header_key.lower() == key_lower:
+                    value = header_value
+                    break
 
         if value is None:
             return default
@@ -407,36 +470,32 @@ class EnvironHeaders:
         return value
 
     def getlist(self, key: str) -> list:
-        """Get list of values for header (for multiple headers with same name)."""
-        # Simplified implementation - assumes single value per header
         value = self.get(key)
         return [value] if value is not None else []
 
     def __getitem__(self, key: str) -> str:
-        """Get header value, raise KeyError if not found."""
         value = self.get(key)
         if value is None:
             raise KeyError(key)
         return value
 
     def __contains__(self, key: str) -> bool:
-        """Check if header exists."""
         return self.get(key) is not None
 
     def __iter__(self):
-        """Iterate over header names."""
+        self._materialize()
         return iter(self._headers.keys())
 
     def items(self):
-        """Iterate over header (name, value) pairs."""
+        self._materialize()
         return self._headers.items()
 
     def keys(self):
-        """Get header names."""
+        self._materialize()
         return self._headers.keys()
 
     def values(self):
-        """Get header values."""
+        self._materialize()
         return self._headers.values()
 
 

@@ -30,21 +30,33 @@ WRK_DURATION = "3s"  # Short duration for quick check, can be increased
 
 
 WORKERS_CONFIG = {
-    "BustAPI": 1,
+    "BustAPI Fast": 1,
+    "BustAPI Turbo": 1,
+    "BustAPI Normal": 1,
     "Flask": 4,
     "FastAPI": 4,
     "Catzilla": 1,
 }
 
 SERVER_FILES = {
-    "BustAPI": "benchmarks/temp_bustapi.py",
+    "BustAPI Fast": "benchmarks/temp_bustapi_fast.py",
+    "BustAPI Turbo": "benchmarks/temp_bustapi_turbo.py",
+    "BustAPI Normal": "benchmarks/temp_bustapi_normal.py",
     "Flask": "benchmarks/temp_flask.py",
     "FastAPI": "benchmarks/temp_fastapi.py",
     "Catzilla": "benchmarks/temp_catzilla.py",
 }
 
+# Versions
+BUSTAPI_VER = "0.15.0"
+CATZILLA_VER = "0.2.2"
+FLASK_VER = "3.1.3"
+FASTAPI_VER = "0.136.1"
+
 RUN_COMMANDS = {
-    "BustAPI": ["python", "benchmarks/temp_bustapi.py"],
+    "BustAPI Fast": ["python", "benchmarks/temp_bustapi_fast.py"],
+    "BustAPI Turbo": ["python", "benchmarks/temp_bustapi_turbo.py"],
+    "BustAPI Normal": ["python", "benchmarks/temp_bustapi_normal.py"],
     "Flask": [
         "gunicorn",
         "-w",
@@ -76,11 +88,32 @@ RUN_COMMANDS = {
 }
 
 # Server Code Templates
-CODE_BUSTAPI = f"""
-from bustapi import BustAPI, jsonify
+CODE_BUSTAPI_FAST = f"""
+from bustapi import BustAPI
 app = BustAPI()
 
-# Turbo routes - zero overhead (no request context, sessions, middleware)
+# Fast routes - Zero Python on hot path (pre-computed)
+@app.fast_route("/")
+def index():
+    return "Hello, World!"
+
+@app.fast_route("/json")
+def json_endpoint():
+    return {{"hello": "world"}}
+
+@app.fast_route("/user/10")
+def user():
+    return {{"user_id": 10}}
+
+if __name__ == "__main__":
+    app.run(host="{HOST}", port={PORT}, workers={WORKERS_CONFIG["BustAPI Fast"]}, debug=False)
+"""
+
+CODE_BUSTAPI_TURBO = f"""
+from bustapi import BustAPI
+app = BustAPI()
+
+# Turbo routes - Zero allocation path (Rust-side matching, direct Python call)
 @app.turbo_route("/")
 def index():
     return "Hello, World!"
@@ -89,18 +122,33 @@ def index():
 def json_endpoint():
     return {{"hello": "world"}}
 
-# # Typed turbo route for path params (v0.8.0+)
-# @app.turbo_route("/user/<int:id>")
-# def user(id: int):
-#     return {{"user_id": id}}
+@app.turbo_route("/user/<int:id>")
+def user(id: int):
+    return {{"user_id": id}}
+
+if __name__ == "__main__":
+    app.run(host="{HOST}", port={PORT}, workers={WORKERS_CONFIG["BustAPI Turbo"]}, debug=False)
+"""
+
+CODE_BUSTAPI_NORMAL = f"""
+from bustapi import BustAPI, jsonify
+app = BustAPI()
+
+# Normal routes - Full Flask-like lifecycle (Request context, middleware, etc.)
+@app.route("/")
+def index():
+    return "Hello, World!"
+
+@app.route("/json")
+def json_endpoint():
+    return jsonify({{"hello": "world"}})
 
 @app.route("/user/<id>")
 def user(id):
-    return {{"user_id": int(id)}}
+    return jsonify({{"user_id": int(id)}})
 
 if __name__ == "__main__":
-    # 8 workers with os.fork() + SO_REUSEPORT for true multiprocessing
-    app.run(host="{HOST}", port={PORT}, workers={WORKERS_CONFIG["BustAPI"]}, debug=False)
+    app.run(host="{HOST}", port={PORT}, workers={WORKERS_CONFIG["BustAPI Normal"]}, debug=False)
 """
 
 CODE_FLASK = """
@@ -278,9 +326,17 @@ def get_system_info():
 
 
 def create_server_files():
+    """Generate temporary server files for each framework."""
     print("📝 Creating temporary server files...")
-    with open(SERVER_FILES["BustAPI"], "w") as f:
-        f.write(CODE_BUSTAPI)
+
+    # BustAPI variants
+    with open(SERVER_FILES["BustAPI Fast"], "w") as f:
+        f.write(CODE_BUSTAPI_FAST)
+    with open(SERVER_FILES["BustAPI Turbo"], "w") as f:
+        f.write(CODE_BUSTAPI_TURBO)
+    with open(SERVER_FILES["BustAPI Normal"], "w") as f:
+        f.write(CODE_BUSTAPI_NORMAL)
+
     with open(SERVER_FILES["Flask"], "w") as f:
         f.write(CODE_FLASK)
     with open(SERVER_FILES["FastAPI"], "w") as f:
@@ -290,10 +346,14 @@ def create_server_files():
 
 
 def clean_server_files():
+    """Remove temporary server files."""
     print("🧹 Cleaning up...")
     for f in SERVER_FILES.values():
         if os.path.exists(f):
-            os.remove(f)
+            try:
+                os.remove(f)
+            except:
+                pass
 
 
 def parse_time(time_str):
@@ -479,7 +539,14 @@ def main():
     all_results = []
 
     try:
-        frameworks = ["BustAPI", "Catzilla", "Flask", "FastAPI"]
+        frameworks = [
+            "BustAPI Fast",
+            "BustAPI Turbo",
+            "BustAPI Normal",
+            "Catzilla",
+            "Flask",
+            "FastAPI",
+        ]
 
         for fw in frameworks:
             fw_results = benchmark_framework(fw)
@@ -510,9 +577,19 @@ def main():
         report_lines.append("")
 
         # Throughput Table
-        # Throughput Table
+        def get_fw_label(fw):
+            if "BustAPI" in fw:
+                return f"{fw} (v{BUSTAPI_VER})"
+            if fw == "Catzilla":
+                return f"{fw} (v{CATZILLA_VER})"
+            if fw == "Flask":
+                return f"{fw} (v{FLASK_VER})"
+            if fw == "FastAPI":
+                return f"{fw} (v{FASTAPI_VER})"
+            return fw
+
         headers = ["Endpoint", "Metrics"] + [
-            f"{fw} ({WORKERS_CONFIG[fw]}w)" for fw in frameworks
+            f"{get_fw_label(fw)} ({WORKERS_CONFIG[fw]}w)" for fw in frameworks
         ]
         report_lines.append("| " + " | ".join(headers) + " |")
         report_lines.append(
@@ -622,13 +699,24 @@ def generate_graph(results: List[BenchmarkResult]):
             )
             rps_values.append(res.requests_sec if res else 0)
 
+        # Get label with version
+        label = fw
+        if "BustAPI" in fw:
+            label = f"{fw} (v{BUSTAPI_VER})"
+        elif fw == "Catzilla":
+            label = f"{fw} (v{CATZILLA_VER})"
+        elif fw == "Flask":
+            label = f"{fw} (v{FLASK_VER})"
+        elif fw == "FastAPI":
+            label = f"{fw} (v{FASTAPI_VER})"
+
         plt.bar(
             [x + (i * bar_width) for x in index],
             rps_values,
             bar_width,
             alpha=opacity,
             color=colors[i % len(colors)],
-            label=fw,
+            label=label,
         )
 
     plt.xlabel("Endpoints")

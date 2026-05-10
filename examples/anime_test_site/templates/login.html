@@ -1,0 +1,170 @@
+{% extends "layout.html" %}
+
+{% block title %}Authentication - AnimeBust{% endblock %}
+
+{% block content %}
+<div class="flex justify-center items-center py-10">
+    <div class="card w-full max-w-lg glass-card shadow-2xl overflow-hidden rounded-3xl">
+        <div class="tabs tabs-boxed bg-transparent p-4 flex justify-center gap-4">
+            <a class="tab tab-lg tab-active bg-primary text-primary-content rounded-full px-10 font-bold" onclick="toggleAuth('login')">Login</a> 
+            <a class="tab tab-lg text-gray-400 hover:text-white transition-colors" onclick="toggleAuth('register')">Register</a>
+        </div>
+
+        <div class="card-body p-10 pt-4">
+            <!-- Login Form -->
+            <div id="login-form" class="space-y-6">
+                <div class="text-center mb-8">
+                    <h2 class="text-3xl font-bold heading-font">Welcome <span class="anime-gradient">Back</span></h2>
+                    <p class="text-gray-400 mt-2">Log in to your account to continue</p>
+                </div>
+
+                <div class="form-control">
+                    <label class="label"><span class="label-text font-semibold">Email Address</span></label>
+                    <input type="email" id="login-email" placeholder="email@example.com" class="input input-bordered bg-white/5 border-white/10 rounded-xl focus:border-primary transition-all" />
+                </div>
+
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text font-semibold">Password</span>
+                        <a href="#" class="label-text-alt link link-hover text-primary">Forgot password?</a>
+                    </label>
+                    <input type="password" id="login-password" placeholder="••••••••" class="input input-bordered bg-white/5 border-white/10 rounded-xl focus:border-primary transition-all" />
+                </div>
+
+                <div id="login-error" class="text-error text-sm hidden text-center"></div>
+
+                <div class="form-control mt-8">
+                    <button class="btn btn-primary btn-lg rounded-xl shadow-xl shadow-primary/20" onclick="handleLogin()">Sign In</button>
+                </div>
+
+                <div class="divider before:bg-white/5 after:bg-white/5 text-xs text-gray-500 uppercase tracking-widest">OR CONTINUE WITH</div>
+
+                <div class="flex gap-4">
+                    <button class="btn btn-outline flex-1 border-white/10 hover:bg-white/5 rounded-xl">
+                        <i class="fab fa-google text-error mr-2"></i> Google
+                    </button>
+                    <button class="btn btn-outline flex-1 border-white/10 hover:bg-white/5 rounded-xl">
+                        <i class="fab fa-github mr-2"></i> GitHub
+                    </button>
+                </div>
+            </div>
+
+            <!-- Register Form (Hidden by default) -->
+            <div id="register-form" class="hidden space-y-6">
+                <div class="text-center mb-8">
+                    <h2 class="text-3xl font-bold heading-font">Join the <span class="anime-gradient">Cult</span></h2>
+                    <p class="text-gray-400 mt-2">Create an account to start streaming</p>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text font-semibold">Username</span></label>
+                        <input type="text" id="reg-username" placeholder="otaku_dev" class="input input-bordered bg-white/5 border-white/10 rounded-xl focus:border-primary transition-all" />
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text font-semibold">Full Name</span></label>
+                        <input type="text" placeholder="John Doe" class="input input-bordered bg-white/5 border-white/10 rounded-xl focus:border-primary transition-all" />
+                    </div>
+                </div>
+
+                <div class="form-control">
+                    <label class="label"><span class="label-text font-semibold">Email Address</span></label>
+                    <input type="email" id="reg-email" placeholder="email@example.com" class="input input-bordered bg-white/5 border-white/10 rounded-xl focus:border-primary transition-all" />
+                </div>
+
+                <div class="form-control">
+                    <label class="label"><span class="label-text font-semibold">Password</span></label>
+                    <input type="password" id="reg-password" placeholder="••••••••" class="input input-bordered bg-white/5 border-white/10 rounded-xl focus:border-primary transition-all" />
+                </div>
+
+                <div id="reg-error" class="text-error text-sm hidden text-center"></div>
+                <div id="reg-success" class="text-success text-sm hidden text-center">Registration successful! Please login.</div>
+
+                <div class="form-control mt-8">
+                    <button class="btn btn-secondary btn-lg rounded-xl shadow-xl shadow-secondary/20" onclick="handleRegister()">Create Account</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    async function handleLogin() {
+        const email = document.getElementById('login-email').value;
+        const password = document.getElementById('login-password').value;
+        const errorDiv = document.getElementById('login-error');
+        
+        errorDiv.classList.add('hidden');
+
+        try {
+            const resp = await fetch('/api/login', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({email, password})
+            });
+            
+            const data = await resp.json();
+            if (resp.ok) {
+                window.location.href = '/dashboard';
+            } else {
+                errorDiv.innerText = data.error || 'Login failed';
+                errorDiv.classList.remove('hidden');
+            }
+        } catch (e) {
+            errorDiv.innerText = 'Network error';
+            errorDiv.classList.remove('hidden');
+        }
+    }
+
+    async function handleRegister() {
+        const username = document.getElementById('reg-username').value;
+        const email = document.getElementById('reg-email').value;
+        const password = document.getElementById('reg-password').value;
+        const errorDiv = document.getElementById('reg-error');
+        const successDiv = document.getElementById('reg-success');
+        
+        errorDiv.classList.add('hidden');
+        successDiv.classList.add('hidden');
+
+        try {
+            const resp = await fetch('/api/register', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({username, email, password})
+            });
+            
+            const data = await resp.json();
+            if (resp.ok) {
+                successDiv.classList.remove('hidden');
+                setTimeout(() => toggleAuth('login'), 2000);
+            } else {
+                errorDiv.innerText = data.error || 'Registration failed';
+                errorDiv.classList.remove('hidden');
+            }
+        } catch (e) {
+            errorDiv.innerText = 'Network error';
+            errorDiv.classList.remove('hidden');
+        }
+    }
+
+    function toggleAuth(type) {
+        const loginForm = document.getElementById('login-form');
+        const registerForm = document.getElementById('register-form');
+        const tabs = document.querySelectorAll('.tab');
+
+        if (type === 'login') {
+            loginForm.classList.remove('hidden');
+            registerForm.classList.add('hidden');
+            tabs[0].classList.add('tab-active', 'bg-primary', 'text-primary-content');
+            tabs[1].classList.remove('tab-active', 'bg-primary', 'text-primary-content');
+            tabs[1].classList.add('text-gray-400');
+        } else {
+            loginForm.classList.add('hidden');
+            registerForm.classList.remove('hidden');
+            tabs[1].classList.add('tab-active', 'bg-primary', 'text-primary-content');
+            tabs[0].classList.remove('tab-active', 'bg-primary', 'text-primary-content');
+            tabs[0].classList.add('text-gray-400');
+        }
+    }
+</script>
+{% endblock %}

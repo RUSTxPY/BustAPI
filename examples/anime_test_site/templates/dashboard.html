@@ -1,0 +1,110 @@
+{% extends "layout.html" %}
+
+{% block title %}Dashboard - AnimeBust{% endblock %}
+
+{% block content %}
+<div class="flex flex-col lg:flex-row gap-10">
+    <!-- Sidebar -->
+    <div class="lg:w-1/4 space-y-4">
+        <div class="glass-card p-6 rounded-3xl text-center mb-6">
+            <div class="avatar online mb-4">
+                <div class="w-24 rounded-full ring ring-primary ring-offset-base-100 ring-offset-2">
+                    <img src="{{ user.avatar }}" />
+                </div>
+            </div>
+            <h2 class="text-xl font-bold heading-font">{{ user.username }}</h2>
+            <p class="text-sm text-primary font-medium mt-1">Premium Member</p>
+            
+            <div class="divider before:bg-white/10 after:bg-white/10"></div>
+            
+            <div class="grid grid-cols-2 gap-4">
+                <div class="text-center">
+                    <p class="text-lg font-bold">124</p>
+                    <p class="text-xs text-gray-400">Watched</p>
+                </div>
+                <div class="text-center">
+                    <p class="text-lg font-bold">12</p>
+                    <p class="text-xs text-gray-400">Following</p>
+                </div>
+            </div>
+        </div>
+
+        <ul class="menu bg-base-100/30 backdrop-blur-md rounded-3xl p-4 border border-white/5">
+            <li><a class="active bg-primary text-primary-content"><i class="fas fa-chart-line mr-2"></i> Overview</a></li>
+            <li><a href="/profile"><i class="fas fa-user-edit mr-2"></i> Edit Profile</a></li>
+            <li><a><i class="fas fa-heart mr-2"></i> Watchlist</a></li>
+            <li><a><i class="fas fa-history mr-2"></i> History</a></li>
+            <div class="divider before:bg-white/10 after:bg-white/10"></div>
+            <li><a class="text-error"><i class="fas fa-sign-out-alt mr-2"></i> Logout</a></li>
+        </ul>
+    </div>
+
+    <!-- Main Content -->
+    <div class="lg:w-3/4 space-y-8">
+        <h1 class="text-4xl font-bold heading-font mb-8">Welcome Back, <span class="anime-gradient">Hero</span>!</h1>
+
+        <!-- Stats Grid -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-6">
+            <div class="stats shadow glass-card overflow-hidden">
+                <div class="stat">
+                    <div class="stat-figure text-primary">
+                        <i class="fas fa-clock text-3xl"></i>
+                    </div>
+                    <div class="stat-title">Watch Time</div>
+                    <div class="stat-value text-primary">2.4k</div>
+                    <div class="stat-desc">Minutes this month</div>
+                </div>
+            </div>
+            <div class="stats shadow glass-card overflow-hidden">
+                <div class="stat">
+                    <div class="stat-figure text-secondary">
+                        <i class="fas fa-fire text-3xl"></i>
+                    </div>
+                    <div class="stat-title">Streak</div>
+                    <div class="stat-value text-secondary">15</div>
+                    <div class="stat-desc">Days active</div>
+                </div>
+            </div>
+            <div class="stats shadow glass-card overflow-hidden">
+                <div class="stat">
+                    <div class="stat-figure text-accent">
+                        <i class="fas fa-medal text-3xl"></i>
+                    </div>
+                    <div class="stat-title">Rank</div>
+                    <div class="stat-value text-accent">Master</div>
+                    <div class="stat-desc">Top 5% of users</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Continue Watching -->
+        <div class="space-y-6">
+            <h2 class="text-2xl font-bold heading-font flex items-center">
+                Continue Watching <i class="fas fa-play-circle ml-3 text-primary"></i>
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="flex gap-4 p-4 glass-card rounded-2xl hover:bg-white/5 transition-colors cursor-pointer group">
+                    <img src="https://m.media-amazon.com/images/M/MV5BMjgwMDk5MTgzMV5BMl5BanBnXkFtZTgwOTU3NzI2MDI@._V1_.jpg" class="w-32 h-20 object-cover rounded-xl shadow-lg" />
+                    <div class="flex flex-col justify-center flex-1">
+                        <h4 class="font-bold group-hover:text-primary transition-colors">Your Name (Kimi no Na wa)</h4>
+                        <div class="w-full bg-white/10 rounded-full h-1.5 mt-2">
+                            <div class="bg-primary h-1.5 rounded-full" style="width: 75%"></div>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-2">75% completed • Ep 01</p>
+                    </div>
+                </div>
+                <div class="flex gap-4 p-4 glass-card rounded-2xl hover:bg-white/5 transition-colors cursor-pointer group">
+                    <img src="https://m.media-amazon.com/images/M/MV5BODcwNWE3OTItMDdmZC00ZWJmLWE0NTEtMDkyMmE0MWU2NjZhXkEyXkFqcGdeQXVyMTA0MTM5NjI2._V1_.jpg" class="w-32 h-20 object-cover rounded-xl shadow-lg" />
+                    <div class="flex flex-col justify-center flex-1">
+                        <h4 class="font-bold group-hover:text-primary transition-colors">Jujutsu Kaisen</h4>
+                        <div class="w-full bg-white/10 rounded-full h-1.5 mt-2">
+                            <div class="bg-primary h-1.5 rounded-full" style="width: 40%"></div>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-2">40% completed • Ep 12</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

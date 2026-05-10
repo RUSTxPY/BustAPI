@@ -209,17 +209,12 @@ def _get_token_from_request() -> Optional[str]:
 
     # 1. Try Headers
     if "headers" in locations:
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
             return auth_header[7:]
 
     # 2. Try Cookies
     if "cookies" in locations:
-        # We need to know if we are looking for access or refresh token
-        # But decorators know which one they want.
-        # This function is generic. We'll try access first, then refresh if called from refresh decorator.
-        # Actually, the decorators should pass the cookie name.
-        # For simplicity, we check both if both are present.
         token = request.cookies.get(jwt_ext._access_cookie_name)
         if token:
             return token
@@ -249,32 +244,28 @@ def _get_refresh_token_from_request() -> Optional[str]:
 
 def jwt_required(fn: Callable) -> Callable:
     """Decorator to require a valid JWT token."""
+    # Cache the abort import at decoration time
+    from .core.exceptions import abort as _abort
 
     @wraps(fn)
     def wrapper(*args, **kwargs):
         token = _get_token_from_request()
 
         if not token:
-            from .core.exceptions import abort
-
-            abort(401, "Missing JWT token")
+            _abort(401, "Missing JWT token")
 
         try:
             jwt_ext = _get_jwt()
             claims = jwt_ext.decode_token(token)
 
             if claims.get("type") == "refresh":
-                from .core.exceptions import abort
-
-                abort(401, "Access token required, not refresh token")
+                _abort(401, "Access token required, not refresh token")
 
             request.jwt_identity = claims.get("identity")
             request.jwt_claims = claims
 
         except ValueError as e:
-            from .core.exceptions import abort
-
-            abort(401, str(e))
+            _abort(401, str(e))
 
         return fn(*args, **kwargs)
 
@@ -307,32 +298,27 @@ def jwt_optional(fn: Callable) -> Callable:
 
 def fresh_jwt_required(fn: Callable) -> Callable:
     """Decorator to require a fresh JWT token."""
+    from .core.exceptions import abort as _abort
 
     @wraps(fn)
     def wrapper(*args, **kwargs):
         token = _get_token_from_request()
 
         if not token:
-            from .core.exceptions import abort
-
-            abort(401, "Missing JWT token")
+            _abort(401, "Missing JWT token")
 
         try:
             jwt_ext = _get_jwt()
             claims = jwt_ext.decode_token(token)
 
             if not claims.get("fresh", False):
-                from .core.exceptions import abort
-
-                abort(401, "Fresh token required")
+                _abort(401, "Fresh token required")
 
             request.jwt_identity = claims.get("identity")
             request.jwt_claims = claims
 
         except ValueError as e:
-            from .core.exceptions import abort
-
-            abort(401, str(e))
+            _abort(401, str(e))
 
         return fn(*args, **kwargs)
 
@@ -341,32 +327,27 @@ def fresh_jwt_required(fn: Callable) -> Callable:
 
 def jwt_refresh_token_required(fn: Callable) -> Callable:
     """Decorator to require a refresh token."""
+    from .core.exceptions import abort as _abort
 
     @wraps(fn)
     def wrapper(*args, **kwargs):
         token = _get_refresh_token_from_request()
 
         if not token:
-            from .core.exceptions import abort
-
-            abort(401, "Missing Refresh token")
+            _abort(401, "Missing Refresh token")
 
         try:
             jwt_ext = _get_jwt()
             claims = jwt_ext.decode_token(token)
 
             if claims.get("type") != "refresh":
-                from .core.exceptions import abort
-
-                abort(401, "Refresh token required")
+                _abort(401, "Refresh token required")
 
             request.jwt_identity = claims.get("identity")
             request.jwt_claims = claims
 
         except ValueError as e:
-            from .core.exceptions import abort
-
-            abort(401, str(e))
+            _abort(401, str(e))
 
         return fn(*args, **kwargs)
 

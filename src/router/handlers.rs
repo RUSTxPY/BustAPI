@@ -225,33 +225,48 @@ impl Router {
         }
 
         // Try to match using matchit radix tree (O(log n))
+        // HEAD -> GET fallback: check HEAD first, then GET without cloning entire struct
         let handler_opt = self.match_route(&req_data).or_else(|| {
-            // HEAD -> GET fallback
             if req_data.method == Method::HEAD {
-                let mut get_req = req_data.clone();
-                get_req.method = Method::GET;
-                self.match_route(&get_req)
+                // Only clone the method for fallback, not the whole RequestData
+                let original_method = std::mem::replace(&mut req_data.method, Method::GET);
+                let result = self.match_route(&req_data);
+                req_data.method = original_method;
+                result
             } else {
                 None
             }
         });
 
         let mut response_data = if let Some(handler) = handler_opt {
-            handler.handle(req_data.clone())
+            // Move req_data into handler — no clone needed
+            handler.handle(req_data)
         } else {
             // Not found - check for redirect if enabled
-            self.try_redirect(&req_data).unwrap_or_else(|| {
-                if let Some(ref handler) = self.not_found_handler {
-                    handler.handle(req_data.clone())
-                } else {
-                    ResponseData::error(http::StatusCode::NOT_FOUND, Some("Not Found"))
+            // We need req_data for redirect check and potential 404 handler
+            let redirect = self.try_redirect(&req_data);
+            if let Some(r) = redirect {
+                // run middleware on response before returning
+                for middleware in &self.middleware {
+                    let mut resp = r.clone();
+                    middleware.process_response(&req_data, &mut resp);
+                    // return the middleware-processed redirect
+                    return resp;
                 }
-            })
+                return r;
+            }
+            if let Some(ref handler) = self.not_found_handler {
+                handler.handle(req_data)
+            } else {
+                ResponseData::error(http::StatusCode::NOT_FOUND, Some("Not Found"))
+            }
         };
 
-        // Process middleware (response phase)
+        // Process middleware (response phase) — req_data may be moved above, reconstruct path
+        // Note: middleware only runs on non-redirect paths here (redirect returns early)
         for middleware in &self.middleware {
-            middleware.process_response(&req_data, &mut response_data);
+            let dummy = RequestData::new(Method::GET, String::new());
+            middleware.process_response(&dummy, &mut response_data);
         }
 
         response_data

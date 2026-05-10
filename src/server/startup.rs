@@ -114,6 +114,11 @@ pub async fn start_server(config: ServerConfig, state: Arc<AppState>) -> std::io
         HttpResponse::Ok().body("OK")
     }
 
+    // Use at least num_cpus Actix I/O threads even in single-process mode.
+    // With block_in_place, I/O threads and Python blocking threads are decoupled:
+    // more I/O threads = more concurrent connections in flight while Python holds GIL.
+    let actix_workers = config.workers.max(num_cpus::get());
+
     HttpServer::new(move || {
         tracing::debug!("App factory running");
 
@@ -123,7 +128,7 @@ pub async fn start_server(config: ServerConfig, state: Arc<AppState>) -> std::io
             .route("/{tail:.*}", web::to(super::handlers::handle_request))
             .default_service(web::to(super::handlers::handle_request))
     })
-    .workers(config.workers)
+    .workers(actix_workers)
     .listen(listener)?
     .run()
     .await

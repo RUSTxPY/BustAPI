@@ -41,9 +41,21 @@ pub struct FastRouteHandler {
 
 impl FastRouteHandler {
     pub fn new(response_body: String) -> Self {
+        let mut content_type = "application/json".to_string();
+
+        // Simple detection for HTML
+        let trimmed = response_body.trim_start();
+        if trimmed.starts_with("<!DOCTYPE")
+            || trimmed.starts_with("<!doctype")
+            || trimmed.starts_with("<html")
+            || trimmed.starts_with("<HTML")
+        {
+            content_type = "text/html; charset=utf-8".to_string();
+        }
+
         Self {
             response_body,
-            content_type: "application/json".to_string(),
+            content_type,
         }
     }
 
@@ -106,14 +118,6 @@ pub async fn handle_request(
 ) -> HttpResponse {
     let start_time = Instant::now();
     tracing::debug!("handle_request path={} method={}", req.path(), req.method());
-    std::fs::write(
-        "/tmp/bustapi_debug.txt",
-        format!("handle_request path={}\n", req.path()),
-    )
-    .ok();
-    for (k, v) in req.headers() {
-        tracing::debug!("Header: {} = {:?}", k, v);
-    }
 
     // Check for WebSocket upgrade request
     let is_websocket = req
@@ -264,7 +268,7 @@ pub async fn handle_request(
         }
     }
 
-    let request_data = RequestData {
+    let mut request_data = RequestData {
         method: req.method().clone(),
         path: req.path().to_string(),
         query_string: req.query_string().to_string(),
@@ -273,12 +277,20 @@ pub async fn handle_request(
         query_params,
         files,
         multipart_form,
+        cached_cookies: None,
     };
 
-    // 2. Dispatch to Router
-    let routes = state.routes.read().await;
-    let response_data = routes.process_request(request_data);
-    drop(routes);
+    // Pre-parse cookies (single parse, cached for all downstream access)
+    request_data.get_cookies_cached();
+
+    // 2. Dispatch to Router (synchronous \u2014 Python GIL work)
+    // For fast_route (pure Rust), this is near-zero overhead.
+    // For turbo_route/route (Python), the GIL is the ceiling; web::block adds overhead without benefit.
+    let response_data = {
+        let routes = state.routes.read().await;
+        routes.process_request(request_data)
+    };
+
 
     // 3. Convert ResponseData to Actix Response
 

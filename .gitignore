@@ -163,3 +163,7 @@ plan.md
 ignore/*.md
 ignore/
 issues/
+plan/
+*.db
+*.txt
+

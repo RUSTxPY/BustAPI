@@ -35,6 +35,15 @@ impl PyUploadedFile {
         &self.content_type
     }
 
+    #[getter]
+    pub fn data(&self, py: Python) -> Py<PyBytes> {
+        PyBytes::new(py, &self.content).into()
+    }
+
+    pub fn read(&self, py: Python) -> Py<PyBytes> {
+        PyBytes::new(py, &self.content).into()
+    }
+
     pub fn save(&self, path: String) -> PyResult<()> {
         let mut file = std::fs::File::create(path)?;
         file.write_all(&self.content)?;
@@ -61,13 +70,24 @@ impl PyRequest {
 
     #[getter]
     pub fn headers(&self) -> HashMap<String, String> {
+        // Note: returns a copy — for single-key access use req.get_header(name)
         self.inner.headers.clone()
+    }
+
+    /// Fast single-header lookup without cloning the full headers map
+    pub fn get_header(&self, name: &str) -> Option<String> {
+        self.inner.get_header(name).cloned()
     }
 
     #[getter]
     pub fn args(&self) -> HashMap<String, String> {
         self.inner.query_params.clone()
     }
+
+    pub fn get_arg(&self, key: &str) -> Option<String> {
+        self.inner.query_params.get(key).cloned()
+    }
+
 
     #[getter]
     pub fn files(&self, py: Python) -> HashMap<String, Py<PyUploadedFile>> {
@@ -120,6 +140,15 @@ impl PyRequest {
             self.inner.multipart_form.clone()
         } else {
             HashMap::new()
+        }
+    }
+
+    pub fn get_form(&self, key: &str) -> Option<String> {
+        if self.inner.is_form() {
+            let form = self.inner.parse_form_data();
+            form.get(key).cloned()
+        } else {
+            self.inner.multipart_form.get(key).cloned()
         }
     }
 

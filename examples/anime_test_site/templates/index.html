@@ -1,0 +1,81 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<div class="hero min-h-[60vh] rounded-3xl overflow-hidden glass-card mb-20">
+    <div class="hero-content text-center">
+        <div class="max-w-3xl">
+            <h1 class="text-6xl font-bold heading-font mb-6 leading-tight">
+                Experience <span class="anime-gradient">Anime</span> Like Never Before.
+            </h1>
+            <p class="py-6 text-xl text-gray-300 leading-relaxed">
+                The world's fastest anime streaming hub, built on the cutting-edge 
+                <strong>BustAPI v0.15.0</strong>. Zero latency, pure performance.
+            </p>
+            <div class="flex gap-4 justify-center mt-4">
+                <button class="btn btn-primary btn-lg rounded-full px-10">Start Watching</button>
+                <button class="btn btn-ghost btn-lg rounded-full px-10 border border-white/10 hover:bg-white/5">Browse All</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Trending Section -->
+<div class="mb-20">
+    <div class="flex justify-between items-end mb-10">
+        <div>
+            <h2 class="text-4xl font-bold heading-font">Trending Now</h2>
+            <p class="text-gray-400 mt-2">The most watched anime this week</p>
+        </div>
+        <a href="/anime/trending" class="btn btn-ghost text-primary">View All <i class="fas fa-arrow-right ml-2"></i></a>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+        {% for anime in animes %}
+        <div class="card glass-card hover-scale cursor-pointer group">
+            <figure class="px-4 pt-4 relative">
+                <img src="{{ anime.image }}" alt="{{ anime.title }}" class="rounded-xl h-64 w-full object-cover shadow-2xl" />
+                <div class="absolute top-6 right-6 badge badge-secondary font-bold">#{{ loop.index }}</div>
+            </figure>
+            <div class="card-body">
+                <div class="flex justify-between items-start">
+                    <h3 class="card-title text-lg group-hover:text-primary transition-colors">{{ anime.title }}</h3>
+                    <div class="flex items-center text-yellow-500 font-bold">
+                        <i class="fas fa-star mr-1 text-xs"></i> {{ anime.rating }}
+                    </div>
+                </div>
+                <p class="text-sm text-gray-400 line-clamp-2 mt-1">{{ anime.desc }}</p>
+                <div class="card-actions justify-start mt-4">
+                    <div class="badge badge-outline opacity-50">{{ anime.genre }}</div>
+                    <div class="badge badge-outline opacity-50">{{ anime.episodes }} Episodes</div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- Features Section -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-10 mb-20">
+    <div class="p-8 glass-card rounded-3xl">
+        <div class="w-16 h-16 bg-primary/20 rounded-2xl flex items-center justify-center mb-6 text-primary text-2xl">
+            <i class="fas fa-bolt"></i>
+        </div>
+        <h3 class="text-2xl font-bold heading-font mb-4">Insane Speed</h3>
+        <p class="text-gray-400 leading-relaxed">Powered by BustAPI's Fast Path, serving pages at sub-millisecond speeds directly from Rust.</p>
+    </div>
+    <div class="p-8 glass-card rounded-3xl">
+        <div class="w-16 h-16 bg-secondary/20 rounded-2xl flex items-center justify-center mb-6 text-secondary text-2xl">
+            <i class="fas fa-tv"></i>
+        </div>
+        <h3 class="text-2xl font-bold heading-font mb-4">4K Streaming</h3>
+        <p class="text-gray-400 leading-relaxed">Experience your favorite shows in crisp 4K quality with optimized buffer-free streaming.</p>
+    </div>
+    <div class="p-8 glass-card rounded-3xl">
+        <div class="w-16 h-16 bg-accent/20 rounded-2xl flex items-center justify-center mb-6 text-accent text-2xl">
+            <i class="fas fa-users"></i>
+        </div>
+        <h3 class="text-2xl font-bold heading-font mb-4">Community</h3>
+        <p class="text-gray-400 leading-relaxed">Join thousands of anime fans. Chat, share, and discover new favorites together.</p>
+    </div>
+</div>
+{% endblock %}
