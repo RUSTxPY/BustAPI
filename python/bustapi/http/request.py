@@ -47,6 +47,8 @@ class Request:
         self._files_cache = None
         self._args_cache = None
         self._user = None
+        self._login_user = None
+        self._login_fresh = None
 
     @classmethod
     def _from_rust_request(cls, rust_request) -> "Request":
