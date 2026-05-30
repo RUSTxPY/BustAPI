@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented here.
 
+## [0.13.3] - 2026-05-30
+
+### Fixed
+- **CI Linting**: Formatted `generator.py` with `black` to resolve CI linting pipeline failure.
+
+### Changed
+- **Git Config**: Added `*.db` to `.gitignore` to prevent tracking database files.
+
+## [0.13.2] - 2026-05-30
+
+### Added
+- **Authentication Tests**: Added comprehensive test cases (`test_discussion_21.py`) verifying role and permission decorators (`@roles_required`, `@permission_required`).
+
+### Fixed
+- **Request State Initialization**: Initialized `_login_user` and `_login_fresh` attributes directly on `Request` object instantiation to ensure robust compatibility with login management decorators.
+
 ## [0.13.1] - 2026-05-03
 
 ### Fixed
