@@ -4,11 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       run_id:
-        description: 'CI Run ID to download artifacts from'
+        description: "CI Run ID to download artifacts from"
         required: true
         type: string
-  release:
-    types: [published]
 
 jobs:
   publish-to-pypi:
@@ -29,14 +27,14 @@ jobs:
           path: dist
           name_is_regexp: true
           name: "wheels-.*|sdist"
-          
+
       - name: Flatten artifacts
         run: |
           # Move all files from subdirectories to dist/ root
           find dist -mindepth 2 -type f -exec mv {} dist/ \;
           # Remove empty subdirectories
           find dist -type d -empty -delete
-          
+
       - name: Display collected files
         run: |
           echo "Files to be published:"
