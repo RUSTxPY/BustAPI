@@ -130,7 +130,6 @@ def create_sync_wrapper(app: "BustAPI", handler: Callable, rule: str) -> Callabl
                         response = app._make_response(res)
                         if session:
                             app.session_interface.save_session(app, session, response)
-                        _request_ctx.reset(token)
                         return app._response_to_rust_format(response)
 
             # 4. Main Request Processing (Branching based on Middleware presence)

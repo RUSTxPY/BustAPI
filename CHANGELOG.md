@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented here.
 
+## [0.13.4] - 2026-06-02
+
+### Added
+- **Session and Redirect Tests**: Added regression tests (`test_discussion_22.py` and `test_issue_23.py`) to verify `session.permanent` scoping and redirect execution.
+
+### Fixed
+- **Token Double-Reset**: Fixed a `RuntimeError` when returning a response from a synchronous before-request hook by removing a redundant contextvar token reset call in `create_sync_wrapper`.
+
 ## [0.13.3] - 2026-05-30
 
 ### Fixed

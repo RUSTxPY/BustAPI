@@ -22,7 +22,7 @@ import platform
 import sys
 from http import HTTPStatus
 
-__version__ = "0.13.3"
+__version__ = "0.13.4"
 __author__ = "BustAPI"  # with GrandpaEJ
 __email__ = ""
 
