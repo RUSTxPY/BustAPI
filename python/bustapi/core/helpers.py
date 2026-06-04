@@ -348,6 +348,31 @@ def render_template(template_name: str, **context) -> Response:
             except RuntimeError:
                 pass
 
+        # Run template context processors
+        try:
+            current_app = _get_current_object()
+            if hasattr(current_app, "template_context_processors"):
+                # Run global processors
+                funcs = current_app.template_context_processors.get(None, [])
+                for func in funcs:
+                    context.update(func())
+
+                # Run blueprint-specific processors
+                try:
+                    from ..http.request import request as req
+
+                    if req and getattr(req, "endpoint", None) and "." in req.endpoint:
+                        bp_name = req.endpoint.split(".", 1)[0]
+                        bp_funcs = current_app.template_context_processors.get(
+                            bp_name, []
+                        )
+                        for func in bp_funcs:
+                            context.update(func())
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
         # Load and render template
         template = env.get_template(template_name)
         html = template.render(**context)

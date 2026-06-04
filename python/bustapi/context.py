@@ -86,6 +86,11 @@ class ContextManagement:
         self.shell_context_processors.append(f)
         return f
 
+    def context_processor(self, f):
+        """Register a template context processor function."""
+        self.template_context_processors.setdefault(None, []).append(f)
+        return f
+
     def make_shell_context(self):
         """Create shell context."""
         context = {"app": self}

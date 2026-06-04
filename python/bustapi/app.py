@@ -146,6 +146,15 @@ class BustAPI(
     def register_blueprint(self, blueprint: Blueprint, **options) -> None:
         url_prefix = options.get("url_prefix", blueprint.url_prefix)
         self.blueprints[blueprint.name] = blueprint
+
+        # Register blueprint template context processors
+        self.template_context_processors.setdefault(blueprint.name, []).extend(
+            blueprint.context_processor_funcs
+        )
+        self.template_context_processors.setdefault(None, []).extend(
+            blueprint.app_context_processor_funcs
+        )
+
         for rule, endpoint, view_func, methods in blueprint.deferred_functions:
             if url_prefix:
                 rule = url_prefix.rstrip("/") + "/" + rule.lstrip("/")

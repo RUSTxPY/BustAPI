@@ -112,6 +112,15 @@ def create_sync_wrapper(app: "BustAPI", handler: Callable, rule: str) -> Callabl
             # 1. Context and Request Initialization (Fast Path)
             request = Request._from_rust_request(rust_request)
             request.app = app
+
+            # Find and set endpoint
+            endpoint = None
+            for ep, func in app.view_functions.items():
+                if func is handler:
+                    endpoint = ep
+                    break
+            request.endpoint = endpoint
+
             token = _request_ctx.set(request)
 
             # 2. Session Initialization
@@ -299,6 +308,15 @@ def create_async_wrapper(app: "BustAPI", handler: Callable, rule: str) -> Callab
         async def run_logic():
             request = Request._from_rust_request(rust_request)
             request.app = app
+
+            # Find and set endpoint
+            endpoint = None
+            for ep, func in app.view_functions.items():
+                if func is handler:
+                    endpoint = ep
+                    break
+            request.endpoint = endpoint
+
             token = _request_ctx.set(request)
 
             try:
