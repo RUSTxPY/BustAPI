@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented here.
 
+## [0.13.5] - 2026-06-04
+
+### Added
+- **Context Processor Tests**: Added comprehensive test cases (`test_issue_24.py`) to verify application-wide and blueprint-specific template context processors and CSRFProtect initialization.
+
+### Fixed
+- **CSRFProtect AttributeError**: Fixed an issue where initializing `CSRFProtect(app)` raised an `AttributeError` by implementing the `context_processor` decorator on the `BustAPI` application object.
+- **Request Endpoint Resolution**: Mapped the active endpoint (`request.endpoint`) during route dispatch so that blueprint-specific context processors can be resolved and applied during template rendering.
+
 ## [0.13.4] - 2026-06-02
 
 ### Added
