@@ -115,7 +115,7 @@ def login_user(user, remember: bool = False, fresh: bool = True) -> bool:
             return False
 
     # Get login manager config
-    login_manager = getattr(request, "_app", None)
+    login_manager = getattr(request, "app", None)
     if login_manager:
         login_manager = getattr(login_manager, "login_manager", None)
 
@@ -153,7 +153,7 @@ def logout_user() -> bool:
         return False
 
     # Get login manager config
-    login_manager = getattr(request, "_app", None)
+    login_manager = getattr(request, "app", None)
     if login_manager:
         login_manager = getattr(login_manager, "login_manager", None)
 

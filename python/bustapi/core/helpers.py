@@ -307,9 +307,7 @@ def render_template(template_name: str, **context) -> Response:
         if template_dir is None:
             try:
                 current_app = _get_current_object()
-                template_dir = (
-                    getattr(current_app, "template_folder", None) or "templates"
-                )
+                template_dir = getattr(current_app, "template_folder", "templates")
             except RuntimeError:
                 # No app context, use default
                 template_dir = "templates"

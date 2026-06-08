@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented here.
 
+## [0.13.6] - 2026-06-08
+
+### Fixed
+- **Auth Login Context**: Fixed `login_manager` extraction by correcting the attribute check on the request from `_app` to `app` ([#26](https://github.com/RUSTxPY/BustAPI/issues/26)).
+- **Template Directory Handling**: Resolved duplicated fallback logic for template directories in `core/helpers.py` by streamlining the lookup against `current_app.template_folder` ([#25](https://github.com/RUSTxPY/BustAPI/issues/25)).
+
 ## [0.13.5] - 2026-06-04
 
 ### Added
