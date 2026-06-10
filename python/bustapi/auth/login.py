@@ -107,8 +107,18 @@ def login_user(user, remember: bool = False, fresh: bool = True) -> bool:
         return False
 
     # Get user ID
-    user_id = getattr(user, "get_id", lambda: None)()
+    # 1. Support custom conflict-free get_login_id() first
+    user_id = getattr(user, "get_login_id", lambda: None)()
+
+    # 2. Fallback to standard get_id()
     if user_id is None:
+        user_id = getattr(user, "get_id", lambda: None)()
+
+    # 3. Ensure string conversion (e.g., Peewee get_id() returns int)
+    if user_id is not None:
+        user_id = str(user_id)
+    else:
+        # 4. Final fallback to .id attribute
         try:
             user_id = str(user.id)
         except AttributeError:

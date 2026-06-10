@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented here.
 
+## [0.13.7] - 2026-06-10
+
+### Fixed
+- **Login Manager ID Resolution**: Improved `login_user()` to gracefully handle non-string `get_id()` returns (e.g. integer IDs from Peewee ORM) and added support for a conflict-free `get_login_id()` method to prevent overriding built-in ORM properties.
+- **Version Sync**: Synchronized package version in `__init__.py` which was previously out of sync with the package configuration.
+
 ## [0.13.6] - 2026-06-08
 
 ### Fixed
