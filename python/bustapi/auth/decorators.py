@@ -89,25 +89,17 @@ def fresh_login_required(fn: Callable) -> Callable:
     return wrapper
 
 
-def roles_required(*roles: str) -> Callable:
+def roles_required(*roles: str, require_all: bool = False) -> Callable:
     """
     Require user to have specific role(s).
 
-    Usage:
-        @app.get("/admin")
-        @roles_required("admin")
-        def admin_panel():
-            ...
-
-        @app.get("/moderator")
-        @roles_required("admin", "moderator")
-        def mod_panel():
-            ...
+    Args:
+        roles: The roles to check.
+        require_all: If True, user must have ALL specified roles (AND). If False, ANY role is sufficient (OR).
     """
 
     def decorator(fn: Callable) -> Callable:
-        @wraps(fn)
-        def wrapper(*args, **kwargs):
+        def check_roles():
             from ..core.exceptions import abort
             from .login import current_user
 
@@ -123,10 +115,25 @@ def roles_required(*roles: str) -> Callable:
                 else:
                     user_roles = []
 
-            # Check if user has any required role
-            if not any(r in user_roles for r in roles):
-                abort(403, f"Role required: {', '.join(roles)}")
+            if require_all:
+                if not all(r in user_roles for r in roles):
+                    abort(403, f"Roles required: {', '.join(roles)}")
+            else:
+                if not any(r in user_roles for r in roles):
+                    abort(403, f"Role required: {', '.join(roles)}")
 
+        if inspect.iscoroutinefunction(fn):
+
+            @wraps(fn)
+            async def async_wrapper(*args, **kwargs):
+                check_roles()
+                return await fn(*args, **kwargs)
+
+            return async_wrapper
+
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            check_roles()
             return fn(*args, **kwargs)
 
         return wrapper
@@ -134,20 +141,17 @@ def roles_required(*roles: str) -> Callable:
     return decorator
 
 
-def permission_required(*permissions: str) -> Callable:
+def permission_required(*permissions: str, require_all: bool = True) -> Callable:
     """
     Require user to have specific permission(s).
 
-    Usage:
-        @app.post("/delete")
-        @permission_required("delete_posts")
-        def delete_post():
-            ...
+    Args:
+        permissions: The permissions to check.
+        require_all: If True, user must have ALL permissions (AND). If False, ANY permission is sufficient (OR).
     """
 
     def decorator(fn: Callable) -> Callable:
-        @wraps(fn)
-        def wrapper(*args, **kwargs):
+        def check_permissions():
             from ..core.exceptions import abort
             from .login import current_user
 
@@ -159,11 +163,26 @@ def permission_required(*permissions: str) -> Callable:
             if callable(user_perms):
                 user_perms = user_perms()
 
-            # Check all required permissions
-            for perm in permissions:
-                if perm not in user_perms:
-                    abort(403, f"Permission required: {perm}")
+            if require_all:
+                for perm in permissions:
+                    if perm not in user_perms:
+                        abort(403, f"Permission required: {perm}")
+            else:
+                if not any(perm in user_perms for perm in permissions):
+                    abort(403, f"Permission required: {', '.join(permissions)}")
 
+        if inspect.iscoroutinefunction(fn):
+
+            @wraps(fn)
+            async def async_wrapper(*args, **kwargs):
+                check_permissions()
+                return await fn(*args, **kwargs)
+
+            return async_wrapper
+
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            check_permissions()
             return fn(*args, **kwargs)
 
         return wrapper

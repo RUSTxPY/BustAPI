@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented here.
 
+## [0.13.8] - 2026-06-11
+
+### Added
+- **Auth Decorators**: Added a `require_all` flag to `@roles_required` and `@permission_required` decorators, enabling explicit AND/OR logic for multi-role/permission checks.
+
+### Fixed
+- **Auth Async Support**: Fixed a critical bug where `@roles_required` and `@permission_required` decorators failed to support `async def` routes.
+
 ## [0.13.7] - 2026-06-10
 
 ### Fixed
