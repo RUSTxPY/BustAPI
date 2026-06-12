@@ -142,6 +142,8 @@ def login_user(user, remember: bool = False, fresh: bool = True) -> bool:
     session[session_key] = user_id
     session[fresh_key] = fresh
     session[remember_key] = remember
+    if remember:
+        session.permanent = True
 
     # Update request
     request._login_user = user

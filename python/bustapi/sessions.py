@@ -15,15 +15,14 @@ class SessionMixin(dict):
     def __init__(self, initial=None):
         super().__init__(initial or {})
         self.modified = False
-        self._permanent = False
 
     @property
     def permanent(self) -> bool:
-        return self._permanent
+        return self.get("_permanent", False)
 
     @permanent.setter
     def permanent(self, value: bool) -> None:
-        self._permanent = value
+        self["_permanent"] = bool(value)
         self.modified = True
 
     def __setitem__(self, key, value):
