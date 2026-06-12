@@ -160,6 +160,7 @@ class BustAPI(
                 rule = url_prefix.rstrip("/") + "/" + rule.lstrip("/")
             full_endpoint = f"{blueprint.name}.{endpoint}"
             self.view_functions[full_endpoint] = view_func
+            self.url_map[rule] = {"endpoint": full_endpoint, "methods": methods}
             for method in methods:
                 if inspect.iscoroutinefunction(view_func):
                     self._rust_app.add_async_route(

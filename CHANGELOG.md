@@ -5,6 +5,7 @@ All notable changes to this project will be documented here.
 ## [0.13.9] - 2026-06-12
 
 ### Fixed
+- **Blueprint Routing**: Fixed an issue where routes registered via `app.register_blueprint()` were not added to the application's `url_map`. This ensures `url_for()` can correctly reverse-map Blueprint endpoints (Issue #29).
 - **Session Permanence**: Fixed a bug in `SessionMixin` where `session.permanent` was not serialized into the session payload, causing it to drop across requests. It now functions correctly as a persistent session setting.
 - **Login Manager Remember**: `login_user(user, remember=True)` now automatically sets `session.permanent = True` as expected, tying persistent logins to the application's permanent session lifetime configuration.
 
