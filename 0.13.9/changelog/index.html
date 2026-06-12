@@ -2995,6 +2995,7 @@
 <h2 id="0139-2026-06-12">[0.13.9] - 2026-06-12</h2>
 <h3 id="fixed">Fixed</h3>
 <ul>
+<li><strong>Blueprint Routing</strong>: Fixed an issue where routes registered via <code>app.register_blueprint()</code> were not added to the application's <code>url_map</code>. This ensures <code>url_for()</code> can correctly reverse-map Blueprint endpoints (Issue #29).</li>
 <li><strong>Session Permanence</strong>: Fixed a bug in <code>SessionMixin</code> where <code>session.permanent</code> was not serialized into the session payload, causing it to drop across requests. It now functions correctly as a persistent session setting.</li>
 <li><strong>Login Manager Remember</strong>: <code>login_user(user, remember=True)</code> now automatically sets <code>session.permanent = True</code> as expected, tying persistent logins to the application's permanent session lifetime configuration.</li>
 </ul>
