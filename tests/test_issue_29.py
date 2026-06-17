@@ -44,6 +44,7 @@ def test_blueprint_advanced_features():
 
     # 2. Before request, after request, teardown request
     hook_runs = []
+
     @bp.before_request
     def bp_before():
         hook_runs.append("before")
@@ -65,6 +66,7 @@ def test_blueprint_advanced_features():
     @bp.route("/trigger_400")
     def trigger_400():
         from bustapi import abort
+
         abort(400)
 
     # 4. App-wide decorators registered on blueprint
@@ -90,6 +92,7 @@ def test_blueprint_advanced_features():
     @app.route("/trigger_401")
     def trigger_401():
         from bustapi import abort
+
         abort(401)
 
     from bustapi.testing import BustTestClient

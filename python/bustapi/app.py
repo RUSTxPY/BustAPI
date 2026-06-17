@@ -172,8 +172,13 @@ class BustAPI(
 
     def _handle_exception(self, exception: Exception) -> Response:
         from .http.request import request
+
         # 1. Try blueprint-specific error handlers first
-        bp = self.blueprints.get(request.blueprint) if (request and request.blueprint) else None
+        bp = (
+            self.blueprints.get(request.blueprint)
+            if (request and request.blueprint)
+            else None
+        )
         if bp:
             for exc_class_or_code, handler in bp.error_handler_spec.items():
                 if isinstance(exc_class_or_code, type) and isinstance(
@@ -186,7 +191,10 @@ class BustAPI(
                         else self._make_response(rv)
                     )
                 elif isinstance(exc_class_or_code, int):
-                    if hasattr(exception, "code") and exception.code == exc_class_or_code:
+                    if (
+                        hasattr(exception, "code")
+                        and exception.code == exc_class_or_code
+                    ):
                         rv = handler(exception)
                         return (
                             self._make_response(*rv)

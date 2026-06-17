@@ -121,7 +121,11 @@ def test_login_user_with_raw_id():
     @app.route("/login-str")
     def login_str():
         success = login_user("456")
-        return {"success": success, "user_id": current_user.get_id(), "name": getattr(current_user, "name", None)}
+        return {
+            "success": success,
+            "user_id": current_user.get_id(),
+            "name": getattr(current_user, "name", None),
+        }
 
     @app.route("/login-int")
     def login_int():
@@ -142,4 +146,3 @@ def test_login_user_with_raw_id():
     assert resp.status_code == 200
     assert resp.json["success"] is True
     assert resp.json["user_id"] == "789"
-

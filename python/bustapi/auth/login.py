@@ -126,6 +126,7 @@ def login_user(user, remember: bool = False, fresh: bool = True) -> bool:
         except AttributeError:
             # 5. Check if `user` itself is the user ID (string, integer, etc.)
             import uuid
+
             if isinstance(user, (str, int, uuid.UUID)):
                 user_id = str(user)
                 is_user_id = True
@@ -158,6 +159,7 @@ def login_user(user, remember: bool = False, fresh: bool = True) -> bool:
         loaded_user = None
         if login_manager and login_manager._user_loader_callback:
             import inspect
+
             try:
                 res = login_manager._user_loader_callback(user_id)
                 if not inspect.isawaitable(res):

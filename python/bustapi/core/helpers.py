@@ -62,6 +62,7 @@ def url_for(endpoint: str, **values) -> str:
     # Handle relative endpoint (e.g. '.index' -> 'blueprint.index')
     if endpoint.startswith("."):
         from ..http.request import request
+
         if request and request.blueprint:
             endpoint = f"{request.blueprint}{endpoint}"
         else:
