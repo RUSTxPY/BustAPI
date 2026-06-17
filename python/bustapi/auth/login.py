@@ -162,7 +162,11 @@ def login_user(user, remember: bool = False, fresh: bool = True) -> bool:
 
             try:
                 res = login_manager._user_loader_callback(user_id)
-                if not inspect.isawaitable(res):
+                if inspect.isawaitable(res):
+                    from ..utils import async_to_sync
+
+                    loaded_user = async_to_sync(res)
+                else:
                     loaded_user = res
             except Exception:
                 pass
