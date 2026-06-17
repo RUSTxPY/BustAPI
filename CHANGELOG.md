@@ -2,10 +2,11 @@
 
 All notable changes to this project will be documented here.
 
-## [0.13.10] - 2026-06-17
+## [0.14.0] - 2026-06-17
 
 ### Added
 - **Auth Login**: Enhanced `login_user()` to accept a raw `user_id` (string, integer, or UUID) directly as the user argument, resolving Discussion #27.
+- **Blueprint Routing Stabilization**: Stabilized Blueprint routing structure (Issue #29) with support for relative `url_for()` endpoint resolution, nested lifecycle hooks (`before_request`, `after_request`, `teardown_request`), and blueprint-specific error handlers (`@bp.errorhandler`).
 
 ## [0.13.9] - 2026-06-12
 
