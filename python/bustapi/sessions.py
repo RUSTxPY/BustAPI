@@ -128,7 +128,9 @@ class SecureCookieSessionInterface(SessionInterface):
             expires = None
             max_age = None
             if session.permanent and app.permanent_session_lifetime:
-                expires = datetime.utcnow() + app.permanent_session_lifetime
+                from datetime import timezone
+
+                expires = datetime.now(timezone.utc) + app.permanent_session_lifetime
                 max_age = int(app.permanent_session_lifetime.total_seconds())
 
             response.set_cookie(

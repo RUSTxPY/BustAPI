@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented here.
 
+## [0.14.1] - 2026-06-17
+
+### Fixed
+- **Auth Login**: Resolved `RuntimeWarning: coroutine 'load_user' was never awaited` when using an asynchronous `user_loader` callback with `login_user(user_id)`. The loader's return value is now correctly run/awaited synchronously.
+- **Session Expiration**: Replaced deprecated `datetime.utcnow()` with timezone-aware `datetime.now(timezone.utc)` to avoid future Python compatibility deprecation warnings.
+
 ## [0.14.0] - 2026-06-17
 
 ### Added
