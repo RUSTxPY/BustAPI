@@ -94,7 +94,7 @@ def login_user(user, remember: bool = False, fresh: bool = True) -> bool:
     Log in a user.
 
     Args:
-        user: User object (must have get_id() method)
+        user: User object (must have get_id() method) or user_id (str, int)
         remember: Create persistent session
         fresh: Mark session as fresh (from password login)
 
@@ -105,6 +105,8 @@ def login_user(user, remember: bool = False, fresh: bool = True) -> bool:
 
     if not session:
         return False
+
+    is_user_id = False
 
     # Get user ID
     # 1. Support custom conflict-free get_login_id() first
@@ -122,7 +124,13 @@ def login_user(user, remember: bool = False, fresh: bool = True) -> bool:
         try:
             user_id = str(user.id)
         except AttributeError:
-            return False
+            # 5. Check if `user` itself is the user ID (string, integer, etc.)
+            import uuid
+            if isinstance(user, (str, int, uuid.UUID)):
+                user_id = str(user)
+                is_user_id = True
+            else:
+                return False
 
     # Get login manager config
     login_manager = getattr(request, "app", None)
@@ -146,7 +154,33 @@ def login_user(user, remember: bool = False, fresh: bool = True) -> bool:
         session.permanent = True
 
     # Update request
-    request._login_user = user
+    if is_user_id:
+        loaded_user = None
+        if login_manager and login_manager._user_loader_callback:
+            import inspect
+            try:
+                res = login_manager._user_loader_callback(user_id)
+                if not inspect.isawaitable(res):
+                    loaded_user = res
+            except Exception:
+                pass
+
+        if loaded_user is not None:
+            request._login_user = loaded_user
+        else:
+            from .user import BaseUser
+
+            class SimpleUser(BaseUser):
+                def __init__(self, uid: str):
+                    self.id = uid
+
+                def get_id(self) -> str:
+                    return self.id
+
+            request._login_user = SimpleUser(user_id)
+    else:
+        request._login_user = user
+
     request._login_fresh = fresh
 
     return True

@@ -95,3 +95,51 @@ def test_imports_from_bustapi():
     assert fresh_login_required is not None
     assert roles_required is not None
     assert permission_required is not None
+
+
+def test_login_user_with_raw_id():
+    """Test that login_user accepts raw user_id (string or integer) directly."""
+    from bustapi import BustAPI, current_user, login_user
+    from bustapi.auth import BaseUser, LoginManager
+    from bustapi.testing import BustTestClient
+
+    app = BustAPI()
+    app.secret_key = "test-secret"
+    lm = LoginManager(app)
+
+    class User(BaseUser):
+        def __init__(self, id, name):
+            self.id = id
+            self.name = name
+
+    @lm.user_loader
+    def load_user(user_id):
+        if user_id == "456":
+            return User("456", "ID User")
+        return None
+
+    @app.route("/login-str")
+    def login_str():
+        success = login_user("456")
+        return {"success": success, "user_id": current_user.get_id(), "name": getattr(current_user, "name", None)}
+
+    @app.route("/login-int")
+    def login_int():
+        success = login_user(789)
+        return {"success": success, "user_id": current_user.get_id()}
+
+    client = BustTestClient(app)
+
+    # Test string ID (which will trigger load_user synchronously)
+    resp = client.get("/login-str")
+    assert resp.status_code == 200
+    assert resp.json["success"] is True
+    assert resp.json["user_id"] == "456"
+    assert resp.json["name"] == "ID User"
+
+    # Test integer ID (which won't find user in load_user, but falls back to SimpleUser)
+    resp = client.get("/login-int")
+    assert resp.status_code == 200
+    assert resp.json["success"] is True
+    assert resp.json["user_id"] == "789"
+

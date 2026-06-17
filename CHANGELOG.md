@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented here.
 
+## [0.13.10] - 2026-06-17
+
+### Added
+- **Auth Login**: Enhanced `login_user()` to accept a raw `user_id` (string, integer, or UUID) directly as the user argument, resolving Discussion #27.
+
 ## [0.13.9] - 2026-06-12
 
 ### Fixed
