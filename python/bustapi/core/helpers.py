@@ -59,6 +59,16 @@ def url_for(endpoint: str, **values) -> str:
     # Get current application to access url_map
     app = _get_current_object()
 
+    # Handle relative endpoint (e.g. '.index' -> 'blueprint.index')
+    if endpoint.startswith("."):
+        from ..http.request import request
+        if request and request.blueprint:
+            endpoint = f"{request.blueprint}{endpoint}"
+        else:
+            raise RuntimeError(
+                "Working outside of request context or no blueprint active"
+            )
+
     # Find rule for endpoint
     rule = None
     for r, options in app.url_map.items():

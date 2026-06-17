@@ -49,6 +49,7 @@ class Request:
         self._user = None
         self._login_user = None
         self._login_fresh = None
+        self.endpoint = None
 
     @classmethod
     def _from_rust_request(cls, rust_request) -> "Request":
@@ -362,6 +363,13 @@ class Request:
     def user(self, value: Any):
         """Set the authenticated user."""
         self._user = value
+
+    @property
+    def blueprint(self) -> Optional[str]:
+        """The name of the current blueprint, if any."""
+        if self.endpoint and "." in self.endpoint:
+            return self.endpoint.split(".", 1)[0]
+        return None
 
 
 class EnvironHeaders:

@@ -130,8 +130,10 @@ def create_sync_wrapper(app: "BustAPI", handler: Callable, rule: str) -> Callabl
                 request.session = session
 
             # 3. Before Request Hooks
-            if app.before_request_funcs:
-                for before_func in app.before_request_funcs:
+            bp = app.blueprints.get(request.blueprint) if request.blueprint else None
+            before_funcs = (bp.before_request_funcs if bp else []) + app.before_request_funcs
+            if before_funcs:
+                for before_func in before_funcs:
                     res = before_func()
                     if inspect.isawaitable(res):
                         res = async_to_sync(res)
@@ -262,8 +264,10 @@ def create_sync_wrapper(app: "BustAPI", handler: Callable, rule: str) -> Callabl
             # 5. Pipeline Cleanup and Hooks
             if app.middleware_manager.middlewares:
                 response = app.middleware_manager.process_response(request, response)
-            if app.after_request_funcs:
-                for after_func in app.after_request_funcs:
+            bp = app.blueprints.get(request.blueprint) if request.blueprint else None
+            after_funcs = (bp.after_request_funcs if bp else []) + app.after_request_funcs
+            if after_funcs:
+                for after_func in after_funcs:
                     res = after_func(response)
                     if inspect.isawaitable(res):
                         res = async_to_sync(res)
@@ -276,8 +280,10 @@ def create_sync_wrapper(app: "BustAPI", handler: Callable, rule: str) -> Callabl
         except Exception as e:
             return app._response_to_rust_format(app._handle_exception(e))
         finally:
-            if app.teardown_request_funcs:
-                for f in app.teardown_request_funcs:
+            bp = app.blueprints.get(request.blueprint) if request.blueprint else None
+            teardown_funcs = (bp.teardown_request_funcs if bp else []) + app.teardown_request_funcs
+            if teardown_funcs:
+                for f in teardown_funcs:
                     try:
                         res = f(None)
                         if inspect.isawaitable(res):
@@ -325,8 +331,10 @@ def create_async_wrapper(app: "BustAPI", handler: Callable, rule: str) -> Callab
                     session = app.session_interface.open_session(app, request)
                     request.session = session
 
-                if app.before_request_funcs:
-                    for before_func in app.before_request_funcs:
+                bp = app.blueprints.get(request.blueprint) if request.blueprint else None
+                before_funcs = (bp.before_request_funcs if bp else []) + app.before_request_funcs
+                if before_funcs:
+                    for before_func in before_funcs:
                         res = before_func()
                         if inspect.isawaitable(res):
                             res = await res
@@ -424,8 +432,10 @@ def create_async_wrapper(app: "BustAPI", handler: Callable, rule: str) -> Callab
                     response = app.middleware_manager.process_response(
                         request, response
                     )
-                if app.after_request_funcs:
-                    for after_func in app.after_request_funcs:
+                bp = app.blueprints.get(request.blueprint) if request.blueprint else None
+                after_funcs = (bp.after_request_funcs if bp else []) + app.after_request_funcs
+                if after_funcs:
+                    for after_func in after_funcs:
                         res = after_func(response)
                         if inspect.isawaitable(res):
                             res = await res
@@ -438,8 +448,10 @@ def create_async_wrapper(app: "BustAPI", handler: Callable, rule: str) -> Callab
             except Exception as e:
                 return app._handle_exception(e)
             finally:
-                if app.teardown_request_funcs:
-                    for f in app.teardown_request_funcs:
+                bp = app.blueprints.get(request.blueprint) if request.blueprint else None
+                teardown_funcs = (bp.teardown_request_funcs if bp else []) + app.teardown_request_funcs
+                if teardown_funcs:
+                    for f in teardown_funcs:
                         try:
                             res = f(None)
                             if inspect.isawaitable(res):

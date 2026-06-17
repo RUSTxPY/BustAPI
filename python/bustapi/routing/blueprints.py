@@ -62,7 +62,7 @@ class Blueprint:
         self.cli_group = cli_group
 
         # Deferred functions to be registered when blueprint is registered with app
-        self.deferred_functions: List[Tuple[str, str, Callable, List[str]]] = []
+        self.deferred_functions: List[Callable[["BlueprintSetupState"], None]] = []
 
         # Error handlers
         self.error_handler_spec: Dict[Union[int, type], Callable] = {}
@@ -95,13 +95,22 @@ class Blueprint:
 
         def decorator(f: Callable) -> Callable:
             endpoint = options.pop("endpoint", f.__name__)
-            methods = options.pop("methods", ["GET"])
-
-            # Store route info for later registration
-            self.deferred_functions.append((rule, endpoint, f, methods))
+            self.add_url_rule(rule, endpoint, f, **options)
             return f
 
         return decorator
+
+    def add_url_rule(
+        self,
+        rule: str,
+        endpoint: Optional[str] = None,
+        view_func: Optional[Callable] = None,
+        **options,
+    ) -> None:
+        """
+        Register a URL rule with the blueprint.
+        """
+        self.record(lambda s: s.add_url_rule(rule, endpoint, view_func, **options))
 
     def get(self, rule: str, **options) -> Callable:
         """Convenience decorator for GET routes."""
@@ -181,7 +190,7 @@ class Blueprint:
         Returns:
             The original function
         """
-        self.before_app_request_funcs.append(f)
+        self.record_once(lambda s: s.app.before_request_funcs.append(f))
         return f
 
     def after_app_request(self, f: Callable) -> Callable:
@@ -194,7 +203,7 @@ class Blueprint:
         Returns:
             The original function
         """
-        self.after_app_request_funcs.append(f)
+        self.record_once(lambda s: s.app.after_request_funcs.append(f))
         return f
 
     def teardown_app_request(self, f: Callable) -> Callable:
@@ -208,7 +217,7 @@ class Blueprint:
         Returns:
             The original function
         """
-        self.teardown_app_request_funcs.append(f)
+        self.record_once(lambda s: s.app.teardown_request_funcs.append(f))
         return f
 
     def errorhandler(self, code_or_exception: Union[int, type]) -> Callable:
@@ -240,8 +249,7 @@ class Blueprint:
         """
 
         def decorator(f: Callable) -> Callable:
-            # This will be registered with the app when blueprint is registered
-            self.error_handler_spec[f"app_{code_or_exception}"] = f
+            self.record_once(lambda s: s.app.errorhandler(code_or_exception)(f))
             return f
 
         return decorator
@@ -331,8 +339,7 @@ class Blueprint:
         Args:
             func: Function to record
         """
-        # TODO: Implement blueprint recording system
-        pass
+        self.deferred_functions.append(func)
 
     def record_once(self, func: Callable) -> None:
         """
@@ -341,8 +348,7 @@ class Blueprint:
         Args:
             func: Function to record
         """
-        # TODO: Implement blueprint recording system
-        pass
+        self.deferred_functions.append(func)
 
     def make_setup_state(self, app, options, first_registration: bool = False):
         """
@@ -376,6 +382,9 @@ class Blueprint:
                 endpoint="static",
                 view_func=app.send_static_file,
             )
+
+        for deferred in self.deferred_functions:
+            deferred(state)
 
     @property
     def has_static_folder(self) -> bool:
@@ -455,6 +464,8 @@ class BlueprintSetupState:
         self.first_registration = first_registration
 
         self.url_prefix = options.get("url_prefix")
+        if self.url_prefix is None:
+            self.url_prefix = blueprint.url_prefix
         self.subdomain = options.get("subdomain")
         self.url_defaults = options.get("url_defaults")
 
@@ -475,10 +486,14 @@ class BlueprintSetupState:
             **options: Additional options
         """
         if self.url_prefix is not None:
+            prefix = self.url_prefix.rstrip("/")
+            if not prefix.startswith("/"):
+                prefix = f"/{prefix}"
+
             if rule:
-                rule = f"{self.url_prefix.rstrip('/')}/{rule.lstrip('/')}"
+                rule = f"{prefix}/{rule.lstrip('/')}"
             else:
-                rule = self.url_prefix
+                rule = prefix
 
         options.setdefault("subdomain", self.subdomain)
         if endpoint is None:

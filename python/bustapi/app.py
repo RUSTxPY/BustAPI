@@ -144,7 +144,6 @@ class BustAPI(
             raise RuntimeError(f"Failed to initialize Rust backend: {e}") from e
 
     def register_blueprint(self, blueprint: Blueprint, **options) -> None:
-        url_prefix = options.get("url_prefix", blueprint.url_prefix)
         self.blueprints[blueprint.name] = blueprint
 
         # Register blueprint template context processors
@@ -155,21 +154,8 @@ class BustAPI(
             blueprint.app_context_processor_funcs
         )
 
-        for rule, endpoint, view_func, methods in blueprint.deferred_functions:
-            if url_prefix:
-                rule = url_prefix.rstrip("/") + "/" + rule.lstrip("/")
-            full_endpoint = f"{blueprint.name}.{endpoint}"
-            self.view_functions[full_endpoint] = view_func
-            self.url_map[rule] = {"endpoint": full_endpoint, "methods": methods}
-            for method in methods:
-                if inspect.iscoroutinefunction(view_func):
-                    self._rust_app.add_async_route(
-                        method, rule, create_async_wrapper(self, view_func, rule)
-                    )
-                else:
-                    self._rust_app.add_route(
-                        method, rule, create_sync_wrapper(self, view_func, rule)
-                    )
+        # Register all deferred functions (routes, hooks, etc.)
+        blueprint.register(self, options)
 
     def add_websocket_route(
         self, path: str, handler: Any, config: Optional[Any] = None
@@ -185,6 +171,30 @@ class BustAPI(
         return make_response(*args)
 
     def _handle_exception(self, exception: Exception) -> Response:
+        from .http.request import request
+        # 1. Try blueprint-specific error handlers first
+        bp = self.blueprints.get(request.blueprint) if (request and request.blueprint) else None
+        if bp:
+            for exc_class_or_code, handler in bp.error_handler_spec.items():
+                if isinstance(exc_class_or_code, type) and isinstance(
+                    exception, exc_class_or_code
+                ):
+                    rv = handler(exception)
+                    return (
+                        self._make_response(*rv)
+                        if isinstance(rv, tuple)
+                        else self._make_response(rv)
+                    )
+                elif isinstance(exc_class_or_code, int):
+                    if hasattr(exception, "code") and exception.code == exc_class_or_code:
+                        rv = handler(exception)
+                        return (
+                            self._make_response(*rv)
+                            if isinstance(rv, tuple)
+                            else self._make_response(rv)
+                        )
+
+        # 2. Try app-wide error handlers
         for exc_class_or_code, handler in self.error_handler_spec.items():
             if isinstance(exc_class_or_code, type) and isinstance(
                 exception, exc_class_or_code
