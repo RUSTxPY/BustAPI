@@ -7,6 +7,46 @@ import re
 from typing import Any, Callable, Optional
 
 
+class Map:
+    """
+    Flask-compatible url_map class to store and iterate rules.
+    Allows multiple rules for the same path pattern (e.g. GET and POST on same path).
+    """
+
+    def __init__(self):
+        self._rules = []
+
+    def __setitem__(self, key, value):
+        self._rules.append((key, value))
+
+    def items(self):
+        return self._rules
+
+    def __iter__(self):
+        return iter(r for r, _ in self._rules)
+
+    def __contains__(self, key):
+        return any(r == key for r, _ in self._rules)
+
+    def __getitem__(self, key):
+        for r, val in reversed(self._rules):
+            if r == key:
+                return val
+        raise KeyError(key)
+
+    def get(self, key, default=None):
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
+    def clear(self):
+        self._rules.clear()
+
+    def __len__(self):
+        return len(self._rules)
+
+
 class RouteRegistration:
     """Mixin providing Flask-compatible route decorators."""
 

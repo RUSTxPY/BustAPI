@@ -82,7 +82,9 @@ class BustAPI(
         self.teardown_request_funcs: List[Callable] = []
         self.teardown_appcontext_funcs: List[Callable] = []
         self.blueprints: Dict[str, Blueprint] = {}
-        self.url_map: Dict[str, Dict] = {}
+        from .routing.decorators import Map
+
+        self.url_map = Map()
         self._url_rules: List[Dict[str, Any]] = []
         self.path_validators: Dict[tuple, Dict[str, Any]] = {}
         self.query_validators: Dict[tuple, Dict[str, tuple]] = {}
@@ -237,13 +239,42 @@ class BustAPI(
 
     def _dispatch_not_found(self, rust_request, params=None):
         from .core.exceptions import NotFound
+        from .utils import async_to_sync
 
         try:
             request = Request._from_rust_request(rust_request)
             request.app = self
             token = _request_ctx.set(request)
             try:
+                session = None
+                if self.secret_key:
+                    session = self.session_interface.open_session(self, request)
+                    request.session = session
+
+                bp = (
+                    self.blueprints.get(request.blueprint)
+                    if request.blueprint
+                    else None
+                )
+                before_funcs = (
+                    bp.before_request_funcs if bp else []
+                ) + self.before_request_funcs
+                if before_funcs:
+                    for before_func in before_funcs:
+                        res = before_func()
+                        if inspect.isawaitable(res):
+                            res = async_to_sync(res)
+                        if res is not None:
+                            response = self._make_response(res)
+                            if session:
+                                self.session_interface.save_session(
+                                    self, session, response
+                                )
+                            return self._response_to_rust_format(response)
+
                 response = self._handle_exception(NotFound())
+                if session is not None:
+                    self.session_interface.save_session(self, session, response)
                 return self._response_to_rust_format(response)
             finally:
                 _request_ctx.reset(token)

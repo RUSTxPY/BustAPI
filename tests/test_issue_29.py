@@ -117,3 +117,52 @@ def test_blueprint_advanced_features():
         res = client.get("/trigger_401")
         assert res.status_code == 401
         assert res.json["error"] == "app_401"
+
+
+def test_blueprint_multiple_methods_for_same_rule():
+    app = BustAPI()
+    app.secret_key = "test-secret-key"
+
+    unblocked_routes = ["/auth/login"]
+
+    @app.before_request
+    def login_before_visit():
+        from bustapi import redirect, request, session
+
+        if not (
+            "user_id" in session
+            or request.path in unblocked_routes
+            or request.path.startswith("/static")
+        ):
+            session["came_from"] = request.path
+            return redirect(url_for("auth.login"))
+
+    auth = Blueprint("auth", __name__, url_prefix="/auth")
+
+    @auth.get("/login", endpoint="login")
+    def login_get():
+        return "GET Login Page"
+
+    @auth.post("/login")
+    def login_post():
+        return "POST Login Page"
+
+    app.register_blueprint(auth)
+
+    from bustapi.testing import BustTestClient
+
+    with BustTestClient(app) as client:
+        # GET / should redirect to /auth/login
+        res = client.get("/")
+        assert res.status_code == 302
+        assert res.headers["Location"] == "/auth/login"
+
+        # GET /auth/login should load fine (200)
+        res_login_get = client.get("/auth/login")
+        assert res_login_get.status_code == 200
+        assert res_login_get.get_data(as_text=True) == "GET Login Page"
+
+        # POST /auth/login should load fine (200)
+        res_login_post = client.post("/auth/login")
+        assert res_login_post.status_code == 200
+        assert res_login_post.get_data(as_text=True) == "POST Login Page"
