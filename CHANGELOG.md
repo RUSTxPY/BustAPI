@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented here.
 
+## [0.14.2] - 2026-06-18
+
+### Fixed
+- **Template `url_for` Availability**: `url_for` is now automatically injected into the Jinja2 template context within `render_template()`, matching Flask's built-in behaviour. Previously, `{{ url_for('endpoint') }}` would raise `'url_for' is undefined` in templates unless manually added via a context processor.
+
 ## [0.14.1] - 2026-06-17
 
 ### Fixed

@@ -356,6 +356,8 @@ def render_template(template_name: str, **context) -> Response:
                 context["current_app"] = _current_app
             except RuntimeError:
                 pass
+        if "url_for" not in context:
+            context["url_for"] = url_for
 
         # Run template context processors
         try:
