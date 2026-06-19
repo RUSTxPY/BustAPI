@@ -220,7 +220,7 @@ pub async fn handle_websocket(
                     Python::attach(|py| {
                         let _ = handler_ref.call_method1(py, "on_disconnect", (sid, reason_str));
                     });
-                    
+
                     let _ = session.close(reason).await;
                     break;
                 }
