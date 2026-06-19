@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented here.
 
+## [0.14.3] - 2026-06-19
+
+### Fixed
+- **WebSocket Handshake**: Fixed a bug where client-initiated close frames (e.g. `socket.close()` in JS) were not properly echoed back by the Rust backend to complete the WebSocket close handshake. `on_disconnect` and `on_binary` handlers are now fully thread-safe and trigger cleanly.
+- **WebSocket Config**: Clarified the usage of `WebSocketConfig` instance for the `config` parameter in WebSocket routes.
+
 ## [0.14.2] - 2026-06-18
 
 ### Fixed
