@@ -214,12 +214,14 @@ pub async fn handle_websocket(
                 }
                 Message::Close(reason) => {
                     let sid = ws_session.id;
-                    let reason_str = reason.map(|r| r.description.unwrap_or_default());
+                    let reason_str = reason.as_ref().and_then(|r| r.description.clone());
                     let handler_ref = Python::attach(|py| handler_for_messages.clone_ref(py));
 
                     Python::attach(|py| {
                         let _ = handler_ref.call_method1(py, "on_disconnect", (sid, reason_str));
                     });
+                    
+                    let _ = session.close(reason).await;
                     break;
                 }
                 _ => {

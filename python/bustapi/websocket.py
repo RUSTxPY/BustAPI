@@ -197,61 +197,49 @@ class WebSocketHandler:
         if hasattr(task, "add_done_callback"):
             task.add_done_callback(_task_done_callback)
 
+    def _get_loop(self, session_id: int):
+        """Find the asyncio loop associated with a session."""
+        if hasattr(self, "_background_loop") and self._background_loop:
+            return self._background_loop
+        task = self._tasks.get(session_id)
+        if task:
+            try:
+                return task.get_loop()
+            except Exception:
+                pass
+        return None
+
     def on_message(self, session_id: int, message: str) -> None:
         """Called when a text message is received."""
         if session_id in self._connections:
             ws = self._connections[session_id]
-            # Since we might be running in a different thread (Actix thread)
-            # than the WebSocket's loop (Background thread), we must use thread-safe scheduling.
-            # We need to find the loop associated with this WebSocket's handler.
-            loop = None
-            if hasattr(self, "_background_loop") and self._background_loop:
-                loop = self._background_loop
-            else:
-                # Fallback: try to get loop from registered task?
-                pass
-
+            loop = self._get_loop(session_id)
             if loop:
                 loop.call_soon_threadsafe(ws._receive_message, message)
             else:
-                # If no specific background loop, imply we are reusing the main loop?
-                # But if we are in Actix thread, main loop might be running in main thread.
-                # call_soon_threadsafe is safe to call from any thread to target loop.
-                # However, if we don't have 'loop' var ...
-                # ws._messages is bound to a loop. We should get it.
-                # asyncio.Queue doesn't expose public ._loop, but we can try to guess.
-                # Actually, check self._tasks[session_id].get_loop() if available py3.7+
-                task = self._tasks.get(session_id)
-                if task:
-                    try:
-                        loop = task.get_loop()
-                        loop.call_soon_threadsafe(ws._receive_message, message)
-                        return
-                    except:
-                        pass
-
-                # Fallback to direct call if we can't find loop (risk of race)
                 ws._receive_message(message)
-
-        return None
 
     def on_binary(self, session_id: int, data: bytes) -> None:
         """Called when binary data is received."""
         if session_id in self._connections:
             ws = self._connections[session_id]
-            # Convert if necessary, but data should come as bytes/list from bindings
-            # If bindings use Vec<u8> -> list[int] in Python usually?
-            # Or bytes?
-            # Let's assume bytes for now or cast.
             if isinstance(data, list):
                 data = bytes(data)
-            ws._receive_message(data)
+            loop = self._get_loop(session_id)
+            if loop:
+                loop.call_soon_threadsafe(ws._receive_message, data)
+            else:
+                ws._receive_message(data)
 
     def on_disconnect(self, session_id: int, reason: Optional[str] = None) -> None:
         """Called when a client disconnects."""
         if session_id in self._connections:
             ws = self._connections[session_id]
-            ws._receive_close(reason)
+            loop = self._get_loop(session_id)
+            if loop:
+                loop.call_soon_threadsafe(ws._receive_close, reason)
+            else:
+                ws._receive_close(reason)
             del self._connections[session_id]
 
         self._cleanup_task(session_id)
