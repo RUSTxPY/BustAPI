@@ -254,8 +254,11 @@ pub async fn handle_request(
                 }
             }
         }
-    } else {
-        // Regular body
+    } else if req.method() == actix_web::http::Method::POST
+        || req.method() == actix_web::http::Method::PUT
+        || req.method() == actix_web::http::Method::PATCH
+    {
+        // Regular body for state-modifying requests
         while let Some(chunk) = payload.next().await {
             if let Ok(data) = chunk {
                 body_bytes.extend_from_slice(&data);
