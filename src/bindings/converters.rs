@@ -17,6 +17,28 @@ pub fn convert_py_result_to_response(
     // Convert result to Bound
     let result_bound = result.bind(py);
 
+    // FAST-PATH FOR PRIMITIVES (str, bytes, dict) to avoid getattr AttributeError overhead
+    if let Ok(py_str) = result_bound.cast::<PyString>() {
+        let s = py_str.to_str().unwrap_or("");
+        let trimmed = s.trim();
+        if trimmed.starts_with('{') || trimmed.starts_with('[') {
+            let mut resp = ResponseData::with_body(s.as_bytes().to_vec());
+            resp.set_header("Content-Type", "application/json");
+            return resp;
+        } else if trimmed.starts_with('<') {
+            return ResponseData::html(s.to_string());
+        } else {
+            return ResponseData::text(s.to_string());
+        }
+    } else if let Ok(py_bytes) = result_bound.cast::<PyBytes>() {
+        return ResponseData::with_body(py_bytes.as_bytes().to_vec());
+    } else if let Ok(_py_dict) = result_bound.cast::<PyDict>() {
+        let body = python_to_response_body(py, result);
+        let mut resp = ResponseData::with_body(body.into_bytes());
+        resp.set_header("Content-Type", "application/json");
+        return resp;
+    }
+
     // FIRST: Check for explicit path attribute (FileResponse optimization)
     if let Ok(path_obj) = result_bound.getattr("path") {
         if let Ok(path_str) = path_obj.extract::<String>() {
