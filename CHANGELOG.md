@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented here.
 
+## [0.15.0-rc2] - 2026-07-23
+
+### Performance
+- **Zero-Copy Body**: `RequestData`/`ResponseData` body changed from `Vec<u8>` to `bytes::Bytes` for O(1) cloning on the middleware path.
+- **Single-Pass Path Params**: Route parameters are extracted exactly once by the matchit radix tree and passed to handlers via `RequestData::path_params`. The old per-handler regex re-parsing is eliminated.
+- **Lock-Free Router**: Router reads on the request path use `arc_swap::ArcSwap` instead of `RwLock`, removing contention under high concurrency.
+- **Offloaded Python Dispatch**: Python handlers run via `tokio::task::spawn_blocking` so the async reactor is never stalled. Pure-Rust fast handlers optionally stay on the worker thread (`should_offload()`).
+- **Skip Full RequestData**: Turbo, static, and fast-route handlers declare `needs_full_request() = false`, skipping expensive header copying, body reading, and query-param parsing.
+- **Fast-Path Primitive Conversion**: Python `str`, `bytes`, and `dict` return values are converted to Rust responses without the getattr `AttributeError` overhead.
+
+### Reliability
+- **Panic Safety**: Handler panics are caught via `catch_unwind` at the FFI boundary and return a 500 response instead of aborting the process. The `panic = "abort"` profile setting has been removed.
+- **Body Size Limit**: Default 16 MiB maximum request body size (`DEFAULT_MAX_BODY_SIZE`). Configurable via the new `max_body_size` kwarg on `app.run()` and `app.run_async()`. Oversized `Content-Length` headers are rejected early with 413 Payload Too Large.
+
+### Refactoring
+- **Deduplicated Dispatch**: Shared `_extract_call_kwargs` between sync and async dispatch paths eliminates redundant `dict(path_params)` conversion. Bare `except:` replaced with `except Exception:`.
+- **Python Binding Cleanup**: Removed the `pattern` field and manual path-parameter extraction from `PyRouteHandler` in favor of the router-extracted `path_params`.
+
+### Benchmarks
+- `run_comparison_auto.py`: Statistical rigor with 10s×3 measured runs + 3s discarded warmup, p50/p90/p99 latency, mean±stdev, failure-row reporting, and worker-count disclaimers.
+- `comparison_bench.py`: New WebSocket handshake capacity benchmark via `oha` with process-group cleanup, failure reporting, and labeled charts.
+
+### Chores
+- Added `arc-swap` v1.x dependency.
+- Updated `.gitignore` for benchmark artifacts and removed a stray tracked `-` file.
+
 ## [0.14.4] - 2026-07-23
 
 ### Added
