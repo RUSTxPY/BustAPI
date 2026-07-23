@@ -20,6 +20,7 @@ pub struct PyRouteHandler {
     pattern: String,
     /// Pre-parsed param specs: (name, type) in order
     param_specs: Vec<(String, ParamType)>,
+    is_zero_arg: bool,
 }
 
 impl PyRouteHandler {
@@ -30,19 +31,47 @@ impl PyRouteHandler {
         param_types: HashMap<String, String>,
     ) -> Self {
         let param_specs = Self::parse_pattern(&pattern, &param_types);
+        let is_zero_arg = Python::attach(|py| {
+            if let Ok(inspect) = py.import("inspect") {
+                if let Ok(sig) = inspect.call_method1("signature", (&handler,)) {
+                    if let Ok(params) = sig.getattr("parameters") {
+                        if let Ok(len) = params.len() {
+                            return len == 0;
+                        }
+                    }
+                }
+            }
+            false
+        });
+
         Self {
             handler,
             pattern,
             param_specs,
+            is_zero_arg,
         }
     }
 
     /// Legacy constructor (no path params)
     pub fn new(handler: Py<PyAny>) -> Self {
+        let is_zero_arg = Python::attach(|py| {
+            if let Ok(inspect) = py.import("inspect") {
+                if let Ok(sig) = inspect.call_method1("signature", (&handler,)) {
+                    if let Ok(params) = sig.getattr("parameters") {
+                        if let Ok(len) = params.len() {
+                            return len == 0;
+                        }
+                    }
+                }
+            }
+            false
+        });
+
         Self {
             handler,
             pattern: String::new(),
             param_specs: Vec::new(),
+            is_zero_arg,
         }
     }
 
@@ -158,6 +187,19 @@ impl PyRouteHandler {
 impl RouteHandler for PyRouteHandler {
     fn handle(&self, req: RequestData) -> ResponseData {
         Python::attach(|py| {
+            if self.is_zero_arg {
+                match self.handler.call0(py) {
+                    Ok(result) => return convert_py_result_to_response(py, result, &req.headers),
+                    Err(e) => {
+                        tracing::error!("Zero-arg Python handler error: {:?}", e);
+                        return ResponseData::error(
+                            actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+                            Some("Handler error"),
+                        );
+                    }
+                }
+            }
+
             // Create request object
             // Extract path params in Rust (fast path) - must do before moving req
             let py_params = if !self.param_specs.is_empty() {

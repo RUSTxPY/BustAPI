@@ -30,6 +30,7 @@ __email__ = ""
 # Import core classes and functions
 from . import logging
 from .app import BustAPI
+from .fast import FastBust
 from .auth import (
     AnonUser,
     # User Classes
