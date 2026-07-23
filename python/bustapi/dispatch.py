@@ -125,7 +125,9 @@ def _extract_call_kwargs(
         kwargs["request"] = request
 
     call_kwargs = (
-        kwargs if has_kwargs else {k: v for k, v in kwargs.items() if k in expected_args}
+        kwargs
+        if has_kwargs
+        else {k: v for k, v in kwargs.items() if k in expected_args}
     )
     return call_kwargs, dep_cache
 
@@ -163,7 +165,9 @@ async def _extract_call_kwargs_async(
         kwargs["request"] = request
 
     call_kwargs = (
-        kwargs if has_kwargs else {k: v for k, v in kwargs.items() if k in expected_args}
+        kwargs
+        if has_kwargs
+        else {k: v for k, v in kwargs.items() if k in expected_args}
     )
     return call_kwargs, dep_cache
 

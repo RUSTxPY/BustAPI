@@ -493,7 +493,11 @@ def benchmark_framework(name: str) -> List[BenchmarkResult]:
     try:
         endpoints = ["/", "/json", "/user/10"]
         for ep in endpoints:
-            print(f"   Measuring {ep} ({BENCH_RUNS}x {WRK_DURATION})...", end="", flush=True)
+            print(
+                f"   Measuring {ep} ({BENCH_RUNS}x {WRK_DURATION})...",
+                end="",
+                flush=True,
+            )
 
             rps_samples = []
             transfer_samples = []
@@ -526,7 +530,9 @@ def benchmark_framework(name: str) -> List[BenchmarkResult]:
 
             if rps_samples:
                 mean_rps = statistics.mean(rps_samples)
-                stdev_rps = statistics.stdev(rps_samples) if len(rps_samples) > 1 else 0.0
+                stdev_rps = (
+                    statistics.stdev(rps_samples) if len(rps_samples) > 1 else 0.0
+                )
                 print(
                     f" {mean_rps:,.0f} ± {stdev_rps:,.0f} RPS | "
                     f"p50={statistics.mean(p50_samples):.2f}ms "

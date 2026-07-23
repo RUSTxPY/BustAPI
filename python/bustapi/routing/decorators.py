@@ -104,11 +104,15 @@ class RouteRegistration:
         for method in methods:
             if inspect.iscoroutinefunction(view_func):
                 self._rust_app.add_async_route(
-                    method, rule, create_async_wrapper(self, view_func, rule, endpoint=endpoint)
+                    method,
+                    rule,
+                    create_async_wrapper(self, view_func, rule, endpoint=endpoint),
                 )
             else:
                 self._rust_app.add_route(
-                    method, rule, create_sync_wrapper(self, view_func, rule, endpoint=endpoint)
+                    method,
+                    rule,
+                    create_sync_wrapper(self, view_func, rule, endpoint=endpoint),
                 )
 
     def route(self, rule: str, **options) -> Callable:
