@@ -3,4 +3,4 @@ pub mod matching;
 pub mod middleware;
 pub mod tests;
 
-pub use handlers::{RouteHandler, Router};
+pub use handlers::{RouteHandler, RouteMatch, Router};

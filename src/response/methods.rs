@@ -11,7 +11,7 @@ impl ResponseData {
     }
 
     /// Set response body
-    pub fn set_body<B: Into<Vec<u8>>>(&mut self, body: B) -> &mut Self {
+    pub fn set_body<B: Into<bytes::Bytes>>(&mut self, body: B) -> &mut Self {
         self.body = body.into();
         self
     }
@@ -67,7 +67,7 @@ impl ResponseData {
 
     /// Get response body as string
     pub fn body_as_string(&self) -> Result<String, std::string::FromUtf8Error> {
-        String::from_utf8(self.body.clone())
+        String::from_utf8(self.body.to_vec())
     }
 
     /// Check if response is successful (2xx status)

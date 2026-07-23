@@ -1,6 +1,8 @@
 //! Route registration and matching system
 //!
 //! Uses matchit radix tree for O(log n) route matching instead of O(n) linear iteration.
+//! Route parameters are extracted exactly once during matching and handed to the
+//! handler via `RequestData::path_params` — no double parsing.
 
 use crate::request::RequestData;
 use crate::response::ResponseData;
@@ -11,6 +13,25 @@ use std::sync::Arc;
 /// Trait for handling HTTP requests
 pub trait RouteHandler: Send + Sync {
     fn handle(&self, req: RequestData) -> ResponseData;
+
+    /// Whether this handler needs the fully-built request
+    /// (headers copied, body read, query params parsed).
+    ///
+    /// Handlers that only use method/path/path_params (turbo, static file,
+    /// fast routes) should return `false` so the server can skip building
+    /// the expensive parts of `RequestData`.
+    fn needs_full_request(&self) -> bool {
+        true
+    }
+
+    /// Whether dispatch should be offloaded to the blocking thread pool.
+    ///
+    /// Python-bound handlers must offload so the async reactor is never
+    /// stalled. Pure-Rust handlers that run in nanoseconds (e.g. static
+    /// responses) can stay on the worker thread.
+    fn should_offload(&self) -> bool {
+        true
+    }
 }
 
 /// Route information
@@ -22,9 +43,10 @@ pub struct Route {
 }
 
 /// Handler wrapper that stores the handler and original path pattern
+#[derive(Clone)]
 struct HandlerEntry {
     handler: Arc<dyn RouteHandler>,
-    #[allow(dead_code)]
+    method: Method,
     original_pattern: String,
     /// Pre-compiled parameter type constraints (name -> type)
     param_types: Vec<(String, ParamType)>,
@@ -100,33 +122,24 @@ fn parse_pattern(pattern: &str) -> (String, Vec<(String, ParamType)>) {
     (result, param_types)
 }
 
-/// Validate extracted params against pre-compiled type constraints
-fn validate_params(params: &matchit::Params, param_types: &[(String, ParamType)]) -> bool {
-    for (name, param_type) in param_types {
-        if let Some(value) = params.get(name) {
-            match param_type {
-                ParamType::Int => {
-                    if value.parse::<i64>().is_err() {
-                        return false;
-                    }
-                }
-                ParamType::Float => {
-                    if value.parse::<f64>().is_err() {
-                        return false;
-                    }
-                }
-                ParamType::Str => {
-                    if value.is_empty() {
-                        return false;
-                    }
-                }
-                ParamType::Path => {
-                    // Path wildcard accepts anything
-                }
-            }
-        }
+/// Validate a single extracted param value against its pre-compiled type
+fn validate_param_value(value: &str, param_type: &ParamType) -> bool {
+    match param_type {
+        ParamType::Int => value.parse::<i64>().is_ok(),
+        ParamType::Float => value.parse::<f64>().is_ok(),
+        ParamType::Str => !value.is_empty(),
+        ParamType::Path => true,
     }
-    true
+}
+
+/// Outcome of matching a request against the router
+pub enum RouteMatch {
+    /// Matched handler plus router-extracted path params (name, raw value)
+    Handler(Arc<dyn RouteHandler>, Vec<(String, String)>),
+    /// Trailing-slash redirect target (full Location, query string included)
+    Redirect(String),
+    /// No route matched
+    NotFound,
 }
 
 /// Router for managing routes and dispatching requests
@@ -141,6 +154,31 @@ pub struct Router {
     pub(crate) middleware: Vec<Arc<dyn super::middleware::Middleware>>,
     pub(crate) redirect_slashes: bool,
     pub not_found_handler: Option<Arc<dyn RouteHandler>>,
+}
+
+/// Clone is used for copy-on-write snapshots (arc_swap) at registration
+/// time. The radix trees are rebuilt from the handler entries; handler
+/// `Arc`s are refcount-bumped, never deep-cloned.
+impl Clone for Router {
+    fn clone(&self) -> Self {
+        let mut method_routers: HashMap<Method, matchit::Router<usize>> = HashMap::new();
+        for (id, entry) in self.handlers.iter().enumerate() {
+            let (matchit_pattern, _) = parse_pattern(&entry.original_pattern);
+            let method_router = method_routers.entry(entry.method.clone()).or_default();
+            // Same conflict policy as add_route: warn and keep the first
+            if let Err(e) = method_router.insert(&matchit_pattern, id) {
+                tracing::warn!("Route re-insertion warning for {}: {:?}", matchit_pattern, e);
+            }
+        }
+        Self {
+            method_routers,
+            handlers: self.handlers.clone(),
+            routes: self.routes.clone(),
+            middleware: self.middleware.clone(),
+            redirect_slashes: self.redirect_slashes,
+            not_found_handler: self.not_found_handler.clone(),
+        }
+    }
 }
 
 impl Router {
@@ -172,6 +210,7 @@ impl Router {
         // Store handler with pre-compiled param types
         self.handlers.push(HandlerEntry {
             handler: handler_arc.clone(),
+            method: method.clone(),
             original_pattern: path.clone(),
             param_types,
         });
@@ -199,6 +238,11 @@ impl Router {
         self.middleware.push(Arc::new(middleware));
     }
 
+    /// Whether any Rust-side middleware is registered
+    pub fn has_middleware(&self) -> bool {
+        !self.middleware.is_empty()
+    }
+
     /// Get all registered routes (for debugging/inspection)
     #[allow(dead_code)]
     pub fn get_routes(&self) -> Vec<(Method, String, Arc<dyn RouteHandler>)> {
@@ -224,73 +268,113 @@ impl Router {
             }
         }
 
-        // Try to match using matchit radix tree (O(log n))
-        let handler_opt = self.match_route(&req_data).or_else(|| {
-            // HEAD -> GET fallback
-            if req_data.method == Method::HEAD {
-                let mut get_req = req_data.clone();
-                get_req.method = Method::GET;
-                self.match_route(&get_req)
-            } else {
-                None
-            }
-        });
+        let matched = self.match_request(
+            &req_data.method,
+            &req_data.path,
+            &req_data.query_string,
+        );
 
-        if !self.middleware.is_empty() {
-            let mut response_data = if let Some(handler) = handler_opt {
-                handler.handle(req_data.clone())
-            } else if let Some(redirect_resp) = self.try_redirect(&req_data) {
-                redirect_resp
-            } else if let Some(ref handler) = self.not_found_handler {
-                handler.handle(req_data.clone())
-            } else {
-                ResponseData::error(http::StatusCode::NOT_FOUND, Some("Not Found"))
+        if self.middleware.is_empty() {
+            // FAST PATH: no middleware, move the request into the handler
+            match matched {
+                RouteMatch::Handler(handler, params) => {
+                    req_data.path_params = params;
+                    handler.handle(req_data)
+                }
+                RouteMatch::Redirect(location) => Self::redirect_response(location),
+                RouteMatch::NotFound => match self.not_found_handler {
+                    Some(ref handler) => handler.handle(req_data),
+                    None => ResponseData::error(http::StatusCode::NOT_FOUND, Some("Not Found")),
+                },
+            }
+        } else {
+            // Middleware path: response phase needs &RequestData after the
+            // handler runs, so one clone is unavoidable here — but it is
+            // cheap now (body is `Bytes`, an O(1) refcount bump).
+            let mut response_data = match matched {
+                RouteMatch::Handler(handler, params) => {
+                    req_data.path_params = params;
+                    handler.handle(req_data.clone())
+                }
+                RouteMatch::Redirect(location) => Self::redirect_response(location),
+                RouteMatch::NotFound => match self.not_found_handler {
+                    Some(ref handler) => handler.handle(req_data.clone()),
+                    None => ResponseData::error(http::StatusCode::NOT_FOUND, Some("Not Found")),
+                },
             };
 
             for middleware in &self.middleware {
                 middleware.process_response(&req_data, &mut response_data);
             }
             response_data
-        } else {
-            if let Some(handler) = handler_opt {
-                handler.handle(req_data)
-            } else if let Some(redirect_resp) = self.try_redirect(&req_data) {
-                redirect_resp
-            } else if let Some(ref handler) = self.not_found_handler {
-                handler.handle(req_data)
-            } else {
-                ResponseData::error(http::StatusCode::NOT_FOUND, Some("Not Found"))
-            }
         }
     }
 
-    /// Match a route using matchit radix tree with pre-compiled type validation
-    fn match_route(&self, req: &RequestData) -> Option<Arc<dyn RouteHandler>> {
-        let method_router = self.method_routers.get(&req.method)?;
-        let matched = method_router.at(&req.path).ok()?;
-        let handler_id = *matched.value;
-        let entry = &self.handlers[handler_id];
+    /// Match a request: radix-tree lookup with HEAD->GET fallback, then
+    /// trailing-slash redirect resolution. Does NOT clone the request.
+    pub fn match_request(&self, method: &Method, path: &str, query_string: &str) -> RouteMatch {
+        let handler_opt = self.match_route(method, path).or_else(|| {
+            // HEAD -> GET fallback (match-only, no request clone needed)
+            if *method == Method::HEAD {
+                self.match_route(&Method::GET, path)
+            } else {
+                None
+            }
+        });
 
-        // Validate params against pre-compiled type constraints
-        if !entry.param_types.is_empty() && !validate_params(&matched.params, &entry.param_types) {
-            return None;
+        if let Some((handler, params)) = handler_opt {
+            return RouteMatch::Handler(handler, params);
         }
 
-        Some(entry.handler.clone())
+        if let Some(location) = self.try_redirect(method, path, query_string) {
+            return RouteMatch::Redirect(location);
+        }
+
+        RouteMatch::NotFound
+    }
+
+    /// Match a route using matchit radix tree.
+    /// Validates params against pre-compiled type constraints and returns
+    /// the extracted params exactly once (single pass, no re-parsing later).
+    fn match_route(
+        &self,
+        method: &Method,
+        path: &str,
+    ) -> Option<(Arc<dyn RouteHandler>, Vec<(String, String)>)> {
+        let method_router = self.method_routers.get(method)?;
+        let matched = method_router.at(path).ok()?;
+        let entry = self.handlers.get(*matched.value)?;
+
+        // Extract + validate in a single pass
+        let mut params: Vec<(String, String)> = Vec::with_capacity(entry.param_types.len());
+        for (name, value) in matched.params.iter() {
+            params.push((name.to_string(), value.to_string()));
+        }
+
+        if !entry.param_types.is_empty() {
+            for (name, param_type) in &entry.param_types {
+                let value = params
+                    .iter()
+                    .find(|(n, _)| n == name)
+                    .map(|(_, v)| v.as_str())
+                    .unwrap_or("");
+                if !validate_param_value(value, param_type) {
+                    return None;
+                }
+            }
+        }
+
+        Some((entry.handler.clone(), params))
     }
 
     /// Try to redirect with/without trailing slash
-    fn try_redirect(&self, req_data: &RequestData) -> Option<ResponseData> {
+    fn try_redirect(&self, method: &Method, path: &str, query_string: &str) -> Option<String> {
         if !self.redirect_slashes {
             return None;
         }
 
-        let path = &req_data.path;
-        let method = &req_data.method;
-
         // Check redirect for current method
-        let redirect_path = if path.ends_with('/') {
-            let trimmed = &path[..path.len() - 1];
+        let redirect_path = if let Some(trimmed) = path.strip_suffix('/') {
             if self
                 .routes
                 .contains_key(&(method.clone(), trimmed.to_string()))
@@ -312,8 +396,7 @@ impl Router {
         let redirect_path = redirect_path.or_else(|| {
             if *method == Method::HEAD {
                 let get_method = Method::GET;
-                if path.ends_with('/') {
-                    let trimmed = &path[..path.len() - 1];
+                if let Some(trimmed) = path.strip_suffix('/') {
                     if self
                         .routes
                         .contains_key(&(get_method.clone(), trimmed.to_string()))
@@ -334,23 +417,20 @@ impl Router {
         });
 
         redirect_path.map(|new_path| {
-            let mut resp = ResponseData::new();
-            resp.status = http::StatusCode::TEMPORARY_REDIRECT;
-            let location = if !req_data.query_string.is_empty() {
-                format!("{}?{}", new_path, req_data.query_string)
+            if !query_string.is_empty() {
+                format!("{}?{}", new_path, query_string)
             } else {
                 new_path
-            };
-            resp.set_header("Location", location);
-            resp
+            }
         })
     }
 
-    /// Find pattern match for dynamic routes (legacy method for compatibility)
-    /// Now uses matchit internally
-    #[allow(dead_code)]
-    fn find_pattern_match(&self, req: &RequestData) -> Option<Arc<dyn RouteHandler>> {
-        self.match_route(req)
+    /// Build the 307 redirect response for a resolved Location
+    pub fn redirect_response(location: String) -> ResponseData {
+        let mut resp = ResponseData::new();
+        resp.status = http::StatusCode::TEMPORARY_REDIRECT;
+        resp.set_header("Location", location);
+        resp
     }
 }
 
