@@ -150,8 +150,14 @@ venv/
 
 # Benchmarks
 benchmarks/temp_*.py
+benchmarks/__pycache__/
+benchmark_results.json
+competitor_ws_temp.py
 stdout_*.txt
 stderr_*.txt
+
+# Stray junk
+/-
 
 *.mp4
 # Video files
