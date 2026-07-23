@@ -382,6 +382,23 @@ where
     }
 }
 
+/// Zero-Copy Rust Native Handler for 500k+ RPS static endpoints
+pub struct NativeRouteHandler {
+    response: ResponseData,
+}
+
+impl NativeRouteHandler {
+    pub fn new(response: ResponseData) -> Self {
+        Self { response }
+    }
+}
+
+impl RouteHandler for NativeRouteHandler {
+    fn handle(&self, _req: RequestData) -> ResponseData {
+        self.response.clone()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

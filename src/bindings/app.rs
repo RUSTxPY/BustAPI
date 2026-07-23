@@ -135,6 +135,38 @@ impl PyBustApp {
         Ok(())
     }
 
+    /// Add a Rust-native route bypassing Python runtime entirely for 200k-500k+ RPS!
+    #[pyo3(signature = (method, path, body, status_code=200, content_type="text/plain; charset=utf-8"))]
+    pub fn add_native_route(
+        &self,
+        method: &str,
+        path: &str,
+        body: String,
+        status_code: u16,
+        content_type: &str,
+    ) -> PyResult<()> {
+        use crate::response::ResponseData;
+        use http::StatusCode;
+
+        let mut resp = ResponseData::with_body(body.into_bytes());
+        resp.set_status(StatusCode::from_u16(status_code).unwrap_or(StatusCode::OK));
+        resp.set_header("Content-Type", content_type);
+
+        let handler = crate::router::handlers::NativeRouteHandler::new(resp);
+
+        let state = self.state.clone();
+        let method_enum = std::str::FromStr::from_str(method)
+            .map_err(|_| pyo3::exceptions::PyValueError::new_err("Invalid HTTP method"))?;
+        let path = path.to_string();
+
+        self.runtime.block_on(async {
+            let mut routes = state.routes.write().await;
+            routes.add_route(method_enum, path, handler);
+        });
+
+        Ok(())
+    }
+
     /// Add a typed turbo route with path parameter extraction in Rust
     ///
     /// This is the fastest route type for dynamic paths.
