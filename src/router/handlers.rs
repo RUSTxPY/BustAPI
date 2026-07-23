@@ -10,6 +10,9 @@ use http::Method;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// A matched route handler with its extracted path parameters.
+type MatchedHandler = (Arc<dyn RouteHandler>, Vec<(String, String)>);
+
 /// Trait for handling HTTP requests
 pub trait RouteHandler: Send + Sync {
     fn handle(&self, req: RequestData) -> ResponseData;
@@ -336,11 +339,7 @@ impl Router {
     /// Match a route using matchit radix tree.
     /// Validates params against pre-compiled type constraints and returns
     /// the extracted params exactly once (single pass, no re-parsing later).
-    fn match_route(
-        &self,
-        method: &Method,
-        path: &str,
-    ) -> Option<(Arc<dyn RouteHandler>, Vec<(String, String)>)> {
+    fn match_route(&self, method: &Method, path: &str) -> Option<MatchedHandler> {
         let method_router = self.method_routers.get(method)?;
         let matched = method_router.at(path).ok()?;
         let entry = self.handlers.get(*matched.value)?;
