@@ -236,25 +236,32 @@ impl Router {
             }
         });
 
-        let mut response_data = if let Some(handler) = handler_opt {
-            handler.handle(req_data.clone())
+        if !self.middleware.is_empty() {
+            let mut response_data = if let Some(handler) = handler_opt {
+                handler.handle(req_data.clone())
+            } else if let Some(redirect_resp) = self.try_redirect(&req_data) {
+                redirect_resp
+            } else if let Some(ref handler) = self.not_found_handler {
+                handler.handle(req_data.clone())
+            } else {
+                ResponseData::error(http::StatusCode::NOT_FOUND, Some("Not Found"))
+            };
+
+            for middleware in &self.middleware {
+                middleware.process_response(&req_data, &mut response_data);
+            }
+            response_data
         } else {
-            // Not found - check for redirect if enabled
-            self.try_redirect(&req_data).unwrap_or_else(|| {
-                if let Some(ref handler) = self.not_found_handler {
-                    handler.handle(req_data.clone())
-                } else {
-                    ResponseData::error(http::StatusCode::NOT_FOUND, Some("Not Found"))
-                }
-            })
-        };
-
-        // Process middleware (response phase)
-        for middleware in &self.middleware {
-            middleware.process_response(&req_data, &mut response_data);
+            if let Some(handler) = handler_opt {
+                handler.handle(req_data)
+            } else if let Some(redirect_resp) = self.try_redirect(&req_data) {
+                redirect_resp
+            } else if let Some(ref handler) = self.not_found_handler {
+                handler.handle(req_data)
+            } else {
+                ResponseData::error(http::StatusCode::NOT_FOUND, Some("Not Found"))
+            }
         }
-
-        response_data
     }
 
     /// Match a route using matchit radix tree with pre-compiled type validation
