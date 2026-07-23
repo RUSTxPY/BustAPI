@@ -167,7 +167,11 @@ impl Clone for Router {
             let method_router = method_routers.entry(entry.method.clone()).or_default();
             // Same conflict policy as add_route: warn and keep the first
             if let Err(e) = method_router.insert(&matchit_pattern, id) {
-                tracing::warn!("Route re-insertion warning for {}: {:?}", matchit_pattern, e);
+                tracing::warn!(
+                    "Route re-insertion warning for {}: {:?}",
+                    matchit_pattern,
+                    e
+                );
             }
         }
         Self {
@@ -268,11 +272,7 @@ impl Router {
             }
         }
 
-        let matched = self.match_request(
-            &req_data.method,
-            &req_data.path,
-            &req_data.query_string,
-        );
+        let matched = self.match_request(&req_data.method, &req_data.path, &req_data.query_string);
 
         if self.middleware.is_empty() {
             // FAST PATH: no middleware, move the request into the handler

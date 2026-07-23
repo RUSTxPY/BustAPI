@@ -27,10 +27,7 @@ pub fn params_to_py_dict(
 
     for (name, value) in path_params {
         // Look up the param's pre-compiled type by name (specs are few)
-        let param_type = param_specs
-            .iter()
-            .find(|(n, _)| n == name)
-            .map(|(_, t)| t);
+        let param_type = param_specs.iter().find(|(n, _)| n == name).map(|(_, t)| t);
 
         match param_type {
             Some(ParamType::Int) => match value.parse::<i64>() {
