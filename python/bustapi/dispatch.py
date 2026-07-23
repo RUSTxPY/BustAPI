@@ -5,7 +5,7 @@ Includes fast-path optimizations for request processing.
 
 import inspect
 from functools import wraps
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Callable, Optional, Set, Tuple
 
 from .http.request import Request, _request_ctx
 from .utils import async_to_sync
@@ -85,6 +85,96 @@ def create_typed_turbo_wrapper(handler: Callable, param_names: list) -> Callable
     return wrapper
 
 
+def _extract_call_kwargs(
+    app: "BustAPI",
+    rule: str,
+    request: Request,
+    path_params: Optional[dict],
+    expected_args: Set[str],
+    has_kwargs: bool,
+) -> Tuple[dict, object]:
+    """
+    Shared kwarg construction for sync handlers.
+
+    Builds path + query + body + dependency kwargs, filters to the handler
+    signature, and returns (call_kwargs, dep_cache).
+    """
+    if path_params is not None:
+        # Rust-extracted params: fresh dict per request — no copy needed.
+        # _validate_path_params only applies Path() constraints (ge/le/regex);
+        # type validation already happened in the matchit router.
+        kwargs = app._validate_path_params(rule, request.method, path_params)
+    elif "<" not in rule:
+        kwargs = {}
+    else:
+        _, kwargs = app._extract_path_params(rule, request.method, request.path)
+
+    kwargs.update(app._extract_query_params(rule, request))
+    if request.method in ("POST", "PUT", "PATCH"):
+        kwargs.update(app._extract_body_params(rule, request))
+
+    dep_kwargs, dep_cache = app._resolve_dependencies(rule, request.method, kwargs)
+    kwargs.update(dep_kwargs)
+
+    # Auto-inject from query for compatibility
+    for name in expected_args:
+        if name not in kwargs and name in request.args:
+            kwargs[name] = request.args.get(name)
+
+    if "request" in expected_args:
+        kwargs["request"] = request
+
+    call_kwargs = (
+        kwargs if has_kwargs else {k: v for k, v in kwargs.items() if k in expected_args}
+    )
+    return call_kwargs, dep_cache
+
+
+async def _extract_call_kwargs_async(
+    app: "BustAPI",
+    rule: str,
+    request: Request,
+    path_params: Optional[dict],
+    expected_args: Set[str],
+    has_kwargs: bool,
+) -> Tuple[dict, object]:
+    """Async variant of _extract_call_kwargs (async dependency resolution)."""
+    if path_params is not None:
+        kwargs = app._validate_path_params(rule, request.method, path_params)
+    elif "<" not in rule:
+        kwargs = {}
+    else:
+        _, kwargs = app._extract_path_params(rule, request.method, request.path)
+
+    kwargs.update(app._extract_query_params(rule, request))
+    if request.method in ("POST", "PUT", "PATCH"):
+        kwargs.update(app._extract_body_params(rule, request))
+
+    dep_kwargs, dep_cache = await app._resolve_dependencies_async(
+        rule, request.method, kwargs
+    )
+    kwargs.update(dep_kwargs)
+
+    for name in expected_args:
+        if name not in kwargs and name in request.args:
+            kwargs[name] = request.args.get(name)
+
+    if "request" in expected_args:
+        kwargs["request"] = request
+
+    call_kwargs = (
+        kwargs if has_kwargs else {k: v for k, v in kwargs.items() if k in expected_args}
+    )
+    return call_kwargs, dep_cache
+
+
+def _make_response_from_result(app: "BustAPI", result):
+    """Normalize handler return value into a Response object."""
+    if isinstance(result, tuple):
+        return app._make_response(*result)
+    return app._make_response(result)
+
+
 def create_sync_wrapper(
     app: "BustAPI", handler: Callable, rule: str, endpoint: str = None
 ) -> Callable:
@@ -140,97 +230,31 @@ def create_sync_wrapper(
                             app.session_interface.save_session(app, session, response)
                         return app._response_to_rust_format(response)
 
-            # 4. Main Request Processing (Branching based on Middleware presence)
+            # 4. Main Request Processing
+            dep_cache = None
             if app.middleware_manager.middlewares:
                 # PATH WITH MIDDLEWARE
                 mw_response = app.middleware_manager.process_request(request)
                 if mw_response:
                     response = mw_response
                 else:
-                    # Parameter Extraction - use Rust-extracted params if available
-                    if path_params is not None:
-                        kwargs = dict(path_params)  # Use Rust-extracted params (FAST)
-                        # Still need to validate against Path constraints
-                        kwargs = app._validate_path_params(rule, request.method, kwargs)
-                    else:
-                        args, kwargs = app._extract_path_params(
-                            rule, request.method, request.path
-                        )
-                    kwargs.update(app._extract_query_params(rule, request))
-                    if request.method in ("POST", "PUT", "PATCH"):
-                        kwargs.update(app._extract_body_params(rule, request))
-
-                    dep_kwargs, dep_cache = app._resolve_dependencies(
-                        rule, request.method, kwargs
+                    call_kwargs, dep_cache = _extract_call_kwargs(
+                        app, rule, request, path_params, expected_args, has_kwargs
                     )
-                    kwargs.update(dep_kwargs)
-
-                    # Auto-inject from query for compatibility
-                    for name in expected_args:
-                        if name not in kwargs and name in request.args:
-                            kwargs[name] = request.args.get(name)
-
-                    # Inject request object if handler expects it
-                    if "request" in expected_args:
-                        kwargs["request"] = request
-
-                    call_kwargs = (
-                        kwargs
-                        if has_kwargs
-                        else {k: v for k, v in kwargs.items() if k in expected_args}
-                    )
-
                     try:
                         result = handler(**call_kwargs)
                     finally:
                         if dep_cache:
                             dep_cache.cleanup_sync()
-
-                    response = (
-                        app._make_response(result)
-                        if not isinstance(result, tuple)
-                        else app._make_response(*result)
-                    )
+                    response = _make_response_from_result(app, result)
             else:
                 # PATH WITHOUT MIDDLEWARE (ULTRA-FAST)
                 if "<" not in rule and not expected_args and path_params is None:
                     result = handler()
-                    dep_cache = None
                 else:
-                    # Use Rust-extracted params if available
-                    if path_params is not None:
-                        kwargs = dict(path_params)  # FAST PATH - Rust-extracted
-                        # Still need to validate against Path constraints
-                        kwargs = app._validate_path_params(rule, request.method, kwargs)
-                    elif "<" not in rule:
-                        kwargs = {}
-                    else:
-                        args, kwargs = app._extract_path_params(
-                            rule, request.method, request.path
-                        )
-
-                    kwargs.update(app._extract_query_params(rule, request))
-                    if request.method in ("POST", "PUT", "PATCH"):
-                        kwargs.update(app._extract_body_params(rule, request))
-                    dep_kwargs, dep_cache = app._resolve_dependencies(
-                        rule, request.method, kwargs
+                    call_kwargs, dep_cache = _extract_call_kwargs(
+                        app, rule, request, path_params, expected_args, has_kwargs
                     )
-                    kwargs.update(dep_kwargs)
-
-                    for name in expected_args:
-                        if name not in kwargs and name in request.args:
-                            kwargs[name] = request.args.get(name)
-
-                    # Inject request object if handler expects it
-                    if "request" in expected_args:
-                        kwargs["request"] = request
-
-                    call_kwargs = (
-                        kwargs
-                        if has_kwargs
-                        else {k: v for k, v in kwargs.items() if k in expected_args}
-                    )
-
                     try:
                         result = handler(**call_kwargs)
                     finally:
@@ -252,11 +276,7 @@ def create_sync_wrapper(
                         )
                         return (result, 200, {"Content-Type": ct})
 
-                response = (
-                    app._make_response(result)
-                    if not isinstance(result, tuple)
-                    else app._make_response(*result)
-                )
+                response = _make_response_from_result(app, result)
 
             # 5. Pipeline Cleanup and Hooks
             if app.middleware_manager.middlewares:
@@ -289,7 +309,7 @@ def create_sync_wrapper(
                         res = f(None)
                         if inspect.isawaitable(res):
                             async_to_sync(res)
-                    except:
+                    except Exception:
                         pass
             _request_ctx.reset(token)
 
@@ -313,7 +333,7 @@ def create_async_wrapper(
         expected_args = set()
 
     @wraps(handler)
-    def wrapper(rust_request):
+    def wrapper(rust_request, path_params=None):
         async def run_logic():
             request = Request._from_rust_request(rust_request)
             request.app = app
@@ -346,87 +366,45 @@ def create_async_wrapper(
                                 )
                             return response
 
+                dep_cache = None
                 if app.middleware_manager.middlewares:
                     mw_response = app.middleware_manager.process_request(request)
                     if mw_response:
                         response = mw_response
                     else:
-                        args, kwargs = app._extract_path_params(
-                            rule, request.method, request.path
+                        call_kwargs, dep_cache = await _extract_call_kwargs_async(
+                            app,
+                            rule,
+                            request,
+                            path_params,
+                            expected_args,
+                            has_kwargs,
                         )
-                        kwargs.update(app._extract_query_params(rule, request))
-                        if request.method in ("POST", "PUT", "PATCH"):
-                            kwargs.update(app._extract_body_params(rule, request))
-
-                        dep_kwargs, dep_cache = await app._resolve_dependencies_async(
-                            rule, request.method, kwargs
-                        )
-                        kwargs.update(dep_kwargs)
-
-                        for name in expected_args:
-                            if name not in kwargs and name in request.args:
-                                kwargs[name] = request.args.get(name)
-
-                        if "request" in expected_args:
-                            kwargs["request"] = request
-
-                        call_kwargs = (
-                            kwargs
-                            if has_kwargs
-                            else {k: v for k, v in kwargs.items() if k in expected_args}
-                        )
-
                         try:
                             result = await handler(**call_kwargs)
                         finally:
                             if dep_cache:
                                 await dep_cache.cleanup()
-
-                        response = (
-                            app._make_response(result)
-                            if not isinstance(result, tuple)
-                            else app._make_response(*result)
-                        )
+                        response = _make_response_from_result(app, result)
                 else:
                     if "<" not in rule and not expected_args:
                         result = await handler()
-                        dep_cache = None
                     else:
-                        args, kwargs = app._extract_path_params(
-                            rule, request.method, request.path
+                        call_kwargs, dep_cache = await _extract_call_kwargs_async(
+                            app,
+                            rule,
+                            request,
+                            path_params,
+                            expected_args,
+                            has_kwargs,
                         )
-                        kwargs.update(app._extract_query_params(rule, request))
-                        if request.method in ("POST", "PUT", "PATCH"):
-                            kwargs.update(app._extract_body_params(rule, request))
-                        dep_kwargs, dep_cache = await app._resolve_dependencies_async(
-                            rule, request.method, kwargs
-                        )
-                        kwargs.update(dep_kwargs)
-
-                        for name in expected_args:
-                            if name not in kwargs and name in request.args:
-                                kwargs[name] = request.args.get(name)
-
-                        if "request" in expected_args:
-                            kwargs["request"] = request
-
-                        call_kwargs = (
-                            kwargs
-                            if has_kwargs
-                            else {k: v for k, v in kwargs.items() if k in expected_args}
-                        )
-
                         try:
                             result = await handler(**call_kwargs)
                         finally:
                             if dep_cache:
                                 await dep_cache.cleanup()
 
-                    response = (
-                        app._make_response(result)
-                        if not isinstance(result, tuple)
-                        else app._make_response(*result)
-                    )
+                    response = _make_response_from_result(app, result)
 
                 if app.middleware_manager.middlewares:
                     response = app.middleware_manager.process_response(
@@ -464,7 +442,7 @@ def create_async_wrapper(
                             res = f(None)
                             if inspect.isawaitable(res):
                                 await res
-                        except:
+                        except Exception:
                             pass
                 _request_ctx.reset(token)
 

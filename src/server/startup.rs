@@ -72,8 +72,13 @@ fn load_rustls_config(cert_path: &str, key_path: &str) -> std::io::Result<rustls
 pub async fn start_server(config: ServerConfig, state: Arc<AppState>) -> std::io::Result<()> {
     let addr = format!("{}:{}", config.host, config.port);
 
+    // Ensure body limit from config is live on the shared state
+    state
+        .max_body_size
+        .store(config.max_body_size, std::sync::atomic::Ordering::Relaxed);
+
     let pid = std::process::id();
-    let route_count = state.routes.read().await.route_count();
+    let route_count = state.routes.load().route_count();
 
     // Stylish Banner (Fiber-like)
     use colored::Colorize;

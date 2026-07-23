@@ -121,16 +121,13 @@ impl PyBustApp {
             )
         };
 
-        // Use blocking task to add route
-        let state = self.state.clone();
         let method_enum = std::str::FromStr::from_str(method)
             .map_err(|_| pyo3::exceptions::PyValueError::new_err("Invalid HTTP method"))?;
         let path = path.to_string();
 
-        self.runtime.block_on(async {
-            let mut routes = state.routes.write().await;
-            routes.add_route(method_enum, path, py_handler);
-        });
+        // Copy-on-write snapshot update (lock-free reads on the request path)
+        self.state
+            .update_router(|routes| routes.add_route(method_enum, path, py_handler));
 
         Ok(())
     }
@@ -162,15 +159,12 @@ impl PyBustApp {
             cache_ttl,
         );
 
-        let state = self.state.clone();
         let method_enum = std::str::FromStr::from_str(method)
             .map_err(|_| pyo3::exceptions::PyValueError::new_err("Invalid HTTP method"))?;
         let path = path.to_string();
 
-        self.runtime.block_on(async {
-            let mut routes = state.routes.write().await;
-            routes.add_route(method_enum, path, py_handler);
-        });
+        self.state
+            .update_router(|routes| routes.add_route(method_enum, path, py_handler));
 
         Ok(())
     }
@@ -179,15 +173,12 @@ impl PyBustApp {
     pub fn add_async_route(&self, method: &str, path: &str, handler: Py<PyAny>) -> PyResult<()> {
         let py_handler = crate::bindings::handlers::PyAsyncRouteHandler::new(handler);
 
-        let state = self.state.clone();
         let method_enum = std::str::FromStr::from_str(method)
             .map_err(|_| pyo3::exceptions::PyValueError::new_err("Invalid HTTP method"))?;
         let path = path.to_string();
 
-        self.runtime.block_on(async {
-            let mut routes = state.routes.write().await;
-            routes.add_route(method_enum, path, py_handler);
-        });
+        self.state
+            .update_router(|routes| routes.add_route(method_enum, path, py_handler));
 
         Ok(())
     }
@@ -236,15 +227,12 @@ impl PyBustApp {
     pub fn add_fast_route(&self, method: &str, path: &str, response_body: String) -> PyResult<()> {
         let fast_handler = FastRouteHandler::new(response_body);
 
-        let state = self.state.clone();
         let method_enum = std::str::FromStr::from_str(method)
             .map_err(|_| pyo3::exceptions::PyValueError::new_err("Invalid HTTP method"))?;
         let path = path.to_string();
 
-        self.runtime.block_on(async {
-            let mut routes = state.routes.write().await;
-            routes.add_route(method_enum, path, fast_handler);
-        });
+        self.state
+            .update_router(|routes| routes.add_route(method_enum, path, fast_handler));
 
         Ok(())
     }
@@ -258,43 +246,34 @@ impl PyBustApp {
             format!("{}/<path:subpath>", path_prefix)
         };
 
-        let state = self.state.clone();
         let method_enum = http::Method::GET;
 
-        self.runtime.block_on(async {
-            let mut routes = state.routes.write().await;
-            routes.add_route(method_enum, path, handler);
-        });
+        self.state
+            .update_router(|routes| routes.add_route(method_enum, path, handler));
 
         Ok(())
     }
 
     /// Configure automatic trailing slash redirection
     pub fn set_redirect_slashes(&self, enabled: bool) -> PyResult<()> {
-        let state = self.state.clone();
-        self.runtime.block_on(async {
-            let mut routes = state.routes.write().await;
-            routes.redirect_slashes = enabled;
-        });
+        self.state
+            .update_router(|routes| routes.redirect_slashes = enabled);
         Ok(())
     }
 
     /// Set a fallback handler for 404 Not Found errors
     pub fn set_not_found_handler(&self, handler: Py<PyAny>) -> PyResult<()> {
         let py_handler = crate::bindings::handlers::PyRouteHandler::new(handler);
-        let state = self.state.clone();
 
-        self.runtime.block_on(async {
-            let mut routes = state.routes.write().await;
-            routes.not_found_handler = Some(Arc::new(py_handler));
-        });
+        self.state
+            .update_router(|routes| routes.not_found_handler = Some(Arc::new(py_handler)));
 
         Ok(())
     }
 
     /// Run the server
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (host, port, workers, debug, verbose, show_banner=None, ssl_cert=None, ssl_key=None))]
+    #[pyo3(signature = (host, port, workers, debug, verbose, show_banner=None, ssl_cert=None, ssl_key=None, max_body_size=None))]
     pub fn run(
         &self,
         host: String,
@@ -305,8 +284,12 @@ impl PyBustApp {
         show_banner: Option<usize>,
         ssl_cert: Option<String>,
         ssl_key: Option<String>,
+        max_body_size: Option<u64>,
     ) -> PyResult<()> {
         let state = self.state.clone();
+        let max_body = max_body_size
+            .map(|v| v as usize)
+            .unwrap_or(crate::server::DEFAULT_MAX_BODY_SIZE);
         let config = ServerConfig {
             host,
             port,
@@ -315,6 +298,7 @@ impl PyBustApp {
             show_banner,
             ssl_cert,
             ssl_key,
+            max_body_size: max_body,
         };
 
         // Initialize logging
@@ -331,6 +315,9 @@ impl PyBustApp {
         self.state
             .debug
             .store(debug || verbose, std::sync::atomic::Ordering::Relaxed);
+        self.state
+            .max_body_size
+            .store(max_body, std::sync::atomic::Ordering::Relaxed);
 
         Python::attach(|py| {
             py.detach(|| {
@@ -345,7 +332,7 @@ impl PyBustApp {
 
     /// Run the server asynchronously
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (host, port, debug, verbose, show_banner=None, ssl_cert=None, ssl_key=None))]
+    #[pyo3(signature = (host, port, debug, verbose, show_banner=None, ssl_cert=None, ssl_key=None, max_body_size=None))]
     pub fn run_async<'p>(
         &self,
         py: Python<'p>,
@@ -356,8 +343,12 @@ impl PyBustApp {
         show_banner: Option<usize>,
         ssl_cert: Option<String>,
         ssl_key: Option<String>,
+        max_body_size: Option<u64>,
     ) -> PyResult<Bound<'p, PyAny>> {
         let state = self.state.clone();
+        let max_body = max_body_size
+            .map(|v| v as usize)
+            .unwrap_or(crate::server::DEFAULT_MAX_BODY_SIZE);
         let config = ServerConfig {
             host,
             port,
@@ -366,6 +357,7 @@ impl PyBustApp {
             show_banner,
             ssl_cert,
             ssl_key,
+            max_body_size: max_body,
         };
 
         if verbose {
@@ -381,6 +373,9 @@ impl PyBustApp {
         self.state
             .debug
             .store(debug || verbose, std::sync::atomic::Ordering::Relaxed);
+        self.state
+            .max_body_size
+            .store(max_body, std::sync::atomic::Ordering::Relaxed);
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let sys = actix_rt::System::new();
@@ -407,17 +402,16 @@ impl PyBustApp {
         let mut req_data = crate::request::RequestData::new(method_enum, path_string);
         req_data.query_string = query_string;
         req_data.headers = headers;
-        req_data.body = body;
+        req_data.body = bytes::Bytes::from(body);
         if !req_data.query_string.is_empty() {
             req_data.query_params = url::form_urlencoded::parse(req_data.query_string.as_bytes())
                 .into_owned()
                 .collect();
         }
 
-        let response_data = self.runtime.block_on(async {
-            let routes = state.routes.read().await;
-            routes.process_request(req_data)
-        });
+        // Lock-free router snapshot — no async runtime hop needed
+        let routes = state.routes.load_full();
+        let response_data = routes.process_request(req_data);
 
         let body_str = response_data
             .body_as_string()

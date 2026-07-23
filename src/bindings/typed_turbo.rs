@@ -15,6 +15,55 @@ use crate::request::RequestData;
 use crate::response::ResponseData;
 use crate::router::RouteHandler;
 
+/// Convert router-extracted path params to a Python dict, applying the
+/// handler's pre-compiled type specs. The router already matched and
+/// validated these values, so no re-parsing of the path happens here.
+pub fn params_to_py_dict(
+    py: Python,
+    path_params: &[(String, String)],
+    param_specs: &[(String, ParamType)],
+) -> PyResult<Py<PyDict>> {
+    let dict = PyDict::new(py);
+
+    for (name, value) in path_params {
+        // Look up the param's pre-compiled type by name (specs are few)
+        let param_type = param_specs
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, t)| t);
+
+        match param_type {
+            Some(ParamType::Int) => match value.parse::<i64>() {
+                Ok(n) => {
+                    dict.set_item(name, PyInt::new(py, n))?;
+                }
+                Err(_) => {
+                    // Router validated this, but stay graceful: hand big
+                    // integers to Python's arbitrary-precision int.
+                    let int_type = py.get_type::<PyInt>();
+                    let py_int = int_type.call1((value,))?;
+                    dict.set_item(name, py_int)?;
+                }
+            },
+            Some(ParamType::Float) => {
+                let n: f64 = value.parse().map_err(|_| {
+                    pyo3::exceptions::PyValueError::new_err(format!(
+                        "Parameter '{}': expected float, got '{}'",
+                        name, value
+                    ))
+                })?;
+                dict.set_item(name, PyFloat::new(py, n))?;
+            }
+            // Str / Path / unknown params pass through as strings
+            _ => {
+                dict.set_item(name, PyString::new(py, value))?;
+            }
+        }
+    }
+
+    Ok(dict.into())
+}
+
 /// Cached response with expiration time
 #[derive(Clone)]
 struct CachedResponse {
@@ -55,8 +104,9 @@ impl ParamType {
     }
 }
 
-/// Parsed parameter value
+/// Parsed parameter value (kept for external consumers / future use)
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum TypedValue {
     Int(i64),
     BigInt(String), // For overflow, let Python handle
@@ -67,6 +117,7 @@ pub enum TypedValue {
 /// Typed turbo route handler with optional caching
 pub struct PyTypedTurboHandler {
     handler: Py<PyAny>,
+    #[allow(dead_code)]
     pattern: String,
     /// (param_name, param_type) in order of appearance in route
     param_specs: Vec<(String, ParamType)>,
@@ -127,109 +178,14 @@ impl PyTypedTurboHandler {
 
         specs
     }
-
-    /// Extract and convert parameters from request path
-    fn extract_params(&self, path: &str) -> Result<HashMap<String, TypedValue>, String> {
-        let pattern_parts: Vec<&str> = self.pattern.trim_matches('/').split('/').collect();
-        let path_parts: Vec<&str> = path.trim_matches('/').split('/').collect();
-
-        let mut params = HashMap::new();
-        let mut spec_idx = 0;
-
-        for (i, pp) in pattern_parts.iter().enumerate() {
-            if pp.starts_with('<') && pp.ends_with('>') {
-                if spec_idx >= self.param_specs.len() {
-                    return Err("Parameter spec mismatch".to_string());
-                }
-
-                let (name, param_type) = &self.param_specs[spec_idx];
-                spec_idx += 1;
-
-                // Handle path wildcard (matches rest of path)
-                if matches!(param_type, ParamType::Path) {
-                    let remaining: String = path_parts[i..].join("/");
-                    params.insert(name.clone(), TypedValue::Str(remaining));
-                    break;
-                }
-
-                if i >= path_parts.len() {
-                    return Err(format!("Missing path segment for parameter '{}'", name));
-                }
-
-                let value = path_parts[i];
-                let typed_value = match param_type {
-                    ParamType::Int => {
-                        // Try fast i64 parse first
-                        match value.parse::<i64>() {
-                            Ok(n) => TypedValue::Int(n),
-                            Err(_) => {
-                                // Check if it's a valid big integer (let Python handle)
-                                if value.chars().all(|c| c.is_ascii_digit() || c == '-') {
-                                    TypedValue::BigInt(value.to_string())
-                                } else {
-                                    return Err(format!(
-                                        "Parameter '{}': expected int, got '{}'",
-                                        name, value
-                                    ));
-                                }
-                            }
-                        }
-                    }
-                    ParamType::Float => match value.parse::<f64>() {
-                        Ok(n) => TypedValue::Float(n),
-                        Err(_) => {
-                            return Err(format!(
-                                "Parameter '{}': expected float, got '{}'",
-                                name, value
-                            ))
-                        }
-                    },
-                    ParamType::Str | ParamType::Path => TypedValue::Str(value.to_string()),
-                };
-
-                params.insert(name.clone(), typed_value);
-            }
-        }
-
-        Ok(params)
-    }
-
-    /// Convert params to Python dict with proper types
-    fn to_py_dict(&self, py: Python, params: &HashMap<String, TypedValue>) -> PyResult<Py<PyDict>> {
-        let dict = PyDict::new(py);
-
-        for (name, value) in params {
-            match value {
-                TypedValue::Int(n) => {
-                    dict.set_item(name, PyInt::new(py, *n))?;
-                }
-                TypedValue::BigInt(s) => {
-                    // Use Python's int() for arbitrary precision
-                    let int_type = py.get_type::<PyInt>();
-                    let py_int = int_type.call1((s,))?;
-                    dict.set_item(name, py_int)?;
-                }
-                TypedValue::Float(n) => {
-                    dict.set_item(name, PyFloat::new(py, *n))?;
-                }
-                TypedValue::Str(s) => {
-                    dict.set_item(name, PyString::new(py, s))?;
-                }
-            }
-        }
-
-        Ok(dict.into())
-    }
 }
 
 impl RouteHandler for PyTypedTurboHandler {
     fn handle(&self, req: RequestData) -> ResponseData {
-        let cache_key = req.path.clone();
-
         // Check cache first (if caching is enabled)
         if self.cache_ttl > 0 {
             if let Ok(cache) = self.cache.read() {
-                if let Some(cached) = cache.get(&cache_key) {
+                if let Some(cached) = cache.get(&req.path) {
                     if !cached.is_expired() {
                         return cached.response.clone();
                     }
@@ -237,17 +193,10 @@ impl RouteHandler for PyTypedTurboHandler {
             }
         }
 
-        // Extract params from path
-        let params = match self.extract_params(&req.path) {
-            Ok(p) => p,
-            Err(e) => {
-                return ResponseData::json_error(actix_web::http::StatusCode::BAD_REQUEST, &e);
-            }
-        };
-
         let response = Python::attach(|py| {
-            // Convert to Python dict
-            let py_params = match self.to_py_dict(py, &params) {
+            // Convert router-extracted params (matchit already parsed and
+            // validated them — no second pass over the path here)
+            let py_params = match params_to_py_dict(py, &req.path_params, &self.param_specs) {
                 Ok(d) => d,
                 Err(e) => {
                     tracing::error!("Failed to convert params to Python: {:?}", e);
@@ -276,12 +225,18 @@ impl RouteHandler for PyTypedTurboHandler {
         if self.cache_ttl > 0 && response.status.is_success() {
             if let Ok(mut cache) = self.cache.write() {
                 cache.insert(
-                    cache_key,
+                    req.path.clone(),
                     CachedResponse::new(response.clone(), self.cache_ttl),
                 );
             }
         }
 
         response
+    }
+
+    /// Typed turbo handlers only need method/path/path_params — the
+    /// server skips header copies, body reads and query parsing for them.
+    fn needs_full_request(&self) -> bool {
+        false
     }
 }

@@ -94,4 +94,9 @@ impl RouteHandler for StaticFileHandler {
         // Generic 404 for any failure (file not found, security block, directory access)
         ResponseData::error(StatusCode::NOT_FOUND, Some("Not Found"))
     }
+
+    /// Static serving only needs method + path — skip header/body/query work.
+    fn needs_full_request(&self) -> bool {
+        false
+    }
 }

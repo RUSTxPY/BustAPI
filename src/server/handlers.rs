@@ -2,13 +2,18 @@
 
 use actix_multipart::Multipart;
 use actix_web::{web, HttpRequest, HttpResponse};
+use arc_swap::ArcSwap;
 use futures::{StreamExt, TryStreamExt};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::request::RequestData;
-use crate::router::{RouteHandler, Router};
+use crate::response::ResponseData;
+use crate::router::{RouteHandler, RouteMatch, Router};
 use std::time::Instant;
+
+/// Default maximum request body size: 16 MiB
+pub const DEFAULT_MAX_BODY_SIZE: usize = 16 * 1024 * 1024;
 
 /// Configuration for the BustAPI server
 #[derive(Debug, Clone)]
@@ -21,6 +26,8 @@ pub struct ServerConfig {
     pub show_banner: Option<usize>,
     pub ssl_cert: Option<String>,
     pub ssl_key: Option<String>,
+    /// Maximum accepted request body size in bytes (DoS protection)
+    pub max_body_size: usize,
 }
 
 impl Default for ServerConfig {
@@ -33,6 +40,7 @@ impl Default for ServerConfig {
             show_banner: Some(num_cpus::get()),
             ssl_cert: None,
             ssl_key: None,
+            max_body_size: DEFAULT_MAX_BODY_SIZE,
         }
     }
 }
@@ -65,11 +73,22 @@ impl RouteHandler for FastRouteHandler {
         resp.set_header("Content-Type", &self.content_type);
         resp
     }
+
+    /// Static body — the request is never touched, skip building it fully.
+    fn needs_full_request(&self) -> bool {
+        false
+    }
+
+    /// Runs in nanoseconds; offloading to the blocking pool would cost
+    /// more than the handler itself.
+    fn should_offload(&self) -> bool {
+        false
+    }
 }
 
 use pyo3::prelude::*;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use crate::websocket::{TurboWebSocketHandler, WebSocketConfig};
 
@@ -79,20 +98,36 @@ type TurboWsRoute = (Arc<TurboWebSocketHandler>, Option<WebSocketConfig>);
 
 /// Shared application state
 pub struct AppState {
-    pub routes: RwLock<Router>,
+    /// Copy-on-write router snapshot: lock-free reads on the request path
+    pub routes: ArcSwap<Router>,
     pub debug: AtomicBool,
     pub websocket_handlers: RwLock<HashMap<String, WsRoute>>,
     pub turbo_websocket_handlers: RwLock<HashMap<String, TurboWsRoute>>,
+    /// Maximum accepted request body size in bytes
+    pub max_body_size: AtomicUsize,
 }
 
 impl AppState {
     pub fn new() -> Self {
         Self {
-            routes: RwLock::new(Router::new()),
+            routes: ArcSwap::new(Arc::new(Router::new())),
             debug: AtomicBool::new(false),
             websocket_handlers: RwLock::new(HashMap::new()),
             turbo_websocket_handlers: RwLock::new(HashMap::new()),
+            max_body_size: AtomicUsize::new(DEFAULT_MAX_BODY_SIZE),
         }
+    }
+
+    /// Copy-on-write router update. Registration is rare (startup) so the
+    /// clone-and-swap cost is fine; request-path reads stay lock-free.
+    pub fn update_router<F>(&self, f: F)
+    where
+        F: FnOnce(&mut Router),
+    {
+        let current = self.routes.load_full();
+        let mut fresh = (*current).clone();
+        f(&mut fresh);
+        self.routes.store(Arc::new(fresh));
     }
 }
 
@@ -102,10 +137,166 @@ impl Default for AppState {
     }
 }
 
+/// Run a full router dispatch on the blocking pool so Python handler
+/// execution never stalls the async reactor. Panics become 500s.
+async fn offload_router(routes: Arc<Router>, req: RequestData) -> ResponseData {
+    tokio::task::spawn_blocking(move || {
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| routes.process_request(req)))
+            .unwrap_or_else(|_| {
+                tracing::error!("Panic caught in request handler");
+                ResponseData::error(
+                    actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    Some("Internal Server Error"),
+                )
+            })
+    })
+    .await
+    .unwrap_or_else(|e| {
+        tracing::error!("Blocking dispatch join error: {:?}", e);
+        ResponseData::error(
+            actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+            Some("Internal Server Error"),
+        )
+    })
+}
+
+/// Run a single handler on the blocking pool (see `offload_router`).
+async fn offload_handler(handler: Arc<dyn RouteHandler>, req: RequestData) -> ResponseData {
+    tokio::task::spawn_blocking(move || {
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| handler.handle(req)))
+            .unwrap_or_else(|_| {
+                tracing::error!("Panic caught in route handler");
+                ResponseData::error(
+                    actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    Some("Internal Server Error"),
+                )
+            })
+    })
+    .await
+    .unwrap_or_else(|e| {
+        tracing::error!("Blocking handler join error: {:?}", e);
+        ResponseData::error(
+            actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+            Some("Internal Server Error"),
+        )
+    })
+}
+
+/// Build the complete RequestData: header map, query params, body/multipart.
+/// Returns Err(HttpResponse) for early rejects (413 Payload Too Large).
+/// Takes `payload` by value so actix-multipart can own the stream.
+async fn build_full_request_data(
+    req: &HttpRequest,
+    mut payload: web::Payload,
+    method: http::Method,
+    path: String,
+    query_string: String,
+    max_body_size: usize,
+) -> Result<RequestData, HttpResponse> {
+    let mut headers = std::collections::HashMap::new();
+    for (key, value) in req.headers() {
+        if let Ok(v) = value.to_str() {
+            headers.insert(key.to_string(), v.to_string());
+        }
+    }
+
+    // Cheap pre-check: reject oversized bodies via Content-Length
+    // before reading a single byte.
+    if let Some(len) = headers
+        .get("content-length")
+        .and_then(|v| v.parse::<usize>().ok())
+    {
+        if len > max_body_size {
+            return Err(HttpResponse::PayloadTooLarge().body("Request body too large"));
+        }
+    }
+
+    // Parse query params slightly redundantly but accurately
+    let query_params = if !req.query_string().is_empty() {
+        url::form_urlencoded::parse(req.query_string().as_bytes())
+            .into_owned()
+            .collect()
+    } else {
+        std::collections::HashMap::new()
+    };
+
+    let mut files = std::collections::HashMap::new();
+    let mut multipart_form = std::collections::HashMap::new();
+    let mut body_bytes = Vec::new();
+
+    let content_type = headers
+        .get("content-type")
+        .map(|ct| ct.to_lowercase())
+        .unwrap_or_default();
+
+    if content_type.contains("multipart/form-data") {
+        let mut total: usize = 0;
+        let mut multipart = Multipart::new(req.headers(), payload);
+        while let Ok(Some(mut field)) = multipart.try_next().await {
+            // Note: In some versions content_disposition returns Option, compiler says it does.
+            if let Some(content_disposition) = field.content_disposition() {
+                let name = content_disposition.get_name().unwrap_or("").to_string();
+                let filename = content_disposition.get_filename().map(|f| f.to_string());
+
+                let mut field_bytes = Vec::new();
+                while let Some(chunk) = field.next().await {
+                    if let Ok(data) = chunk {
+                        total += data.len();
+                        if total > max_body_size {
+                            return Err(
+                                HttpResponse::PayloadTooLarge().body("Request body too large")
+                            );
+                        }
+                        field_bytes.extend_from_slice(&data);
+                    }
+                }
+
+                if let Some(fname) = filename {
+                    files.insert(
+                        name,
+                        crate::request::UploadedFile {
+                            filename: fname,
+                            content_type: field
+                                .content_type()
+                                .map(|ct| ct.to_string())
+                                .unwrap_or_default(),
+                            content: field_bytes,
+                        },
+                    );
+                } else if let Ok(s) = String::from_utf8(field_bytes) {
+                    multipart_form.insert(name, s);
+                }
+            }
+        }
+    } else {
+        // Regular body, with a hard size cap
+        while let Some(chunk) = payload.next().await {
+            if let Ok(data) = chunk {
+                if body_bytes.len() + data.len() > max_body_size {
+                    return Err(HttpResponse::PayloadTooLarge().body("Request body too large"));
+                }
+                body_bytes.extend_from_slice(&data);
+            }
+        }
+    }
+
+    Ok(RequestData {
+        method,
+        path,
+        query_string,
+        headers,
+        body: bytes::Bytes::from(body_bytes), // single move, no double copy
+        query_params,
+        files,
+        multipart_form,
+        path_params: Vec::new(), // filled from the router match below
+    })
+}
+
 /// Main request handler - dispatches to registered route handlers
 pub async fn handle_request(
     req: HttpRequest,
-    mut payload: web::Payload,
+    payload: web::Payload,
     state: web::Data<AppState>,
 ) -> HttpResponse {
     let start_time = Instant::now();
@@ -154,7 +345,7 @@ pub async fn handle_request(
         let ws_handlers = state.websocket_handlers.read().await;
 
         if let Some((handler, config)) = ws_handlers.get(&path) {
-            println!("DEBUG: Found WebSocket handler for path: {}", path);
+            tracing::debug!("Found WebSocket handler for path: {}", path);
             let handler_clone = Python::attach(|py| handler.clone_ref(py));
             let config_clone = config.clone();
             drop(ws_handlers);
@@ -196,90 +387,58 @@ pub async fn handle_request(
         drop(ws_handlers);
     }
 
-    // 1. Convert Actix Request to generic RequestData
-    let mut headers = std::collections::HashMap::new();
-    for (key, value) in req.headers() {
-        if let Ok(v) = value.to_str() {
-            headers.insert(key.to_string(), v.to_string());
-        }
-    }
+    let method = req.method().clone();
+    let path = req.path().to_string();
+    let query_string = req.query_string().to_string();
 
-    // Parse query params slightly redundantly but accurately
-    let query_params = if !req.query_string().is_empty() {
-        url::form_urlencoded::parse(req.query_string().as_bytes())
-            .into_owned()
-            .collect()
-    } else {
-        std::collections::HashMap::new()
-    };
+    // Lock-free snapshot of the router (no RwLock on the request path)
+    let routes = state.routes.load_full();
 
-    let mut files = std::collections::HashMap::new();
-    let mut multipart_form = std::collections::HashMap::new();
-    let mut body_bytes = Vec::new();
+    // Match BEFORE building RequestData: handlers that never touch
+    // headers/body/query (turbo, static, fast) skip that work entirely.
+    let route_match = routes.match_request(&method, &path, &query_string);
+    let router_has_middleware = routes.has_middleware();
 
-    let content_type = headers
-        .get("content-type")
-        .map(|ct| ct.to_lowercase())
-        .unwrap_or_default();
+    let needs_full = router_has_middleware
+        || match &route_match {
+            RouteMatch::Handler(handler, _) => handler.needs_full_request(),
+            RouteMatch::Redirect(_) => false,
+            // The 404 fallback is a Python handler and needs the request
+            RouteMatch::NotFound => true,
+        };
 
-    if content_type.contains("multipart/form-data") {
-        let mut multipart = Multipart::new(req.headers(), payload);
-        while let Ok(Some(mut field)) = multipart.try_next().await {
-            // Note: In some versions content_disposition returns Option, compiler says it does.
-            if let Some(content_disposition) = field.content_disposition() {
-                let name = content_disposition.get_name().unwrap_or("").to_string();
-                let filename = content_disposition.get_filename().map(|f| f.to_string());
-
-                let mut field_bytes = Vec::new();
-                while let Some(chunk) = field.next().await {
-                    if let Ok(data) = chunk {
-                        field_bytes.extend_from_slice(&data);
-                    }
-                }
-
-                if let Some(fname) = filename {
-                    files.insert(
-                        name,
-                        crate::request::UploadedFile {
-                            filename: fname,
-                            content_type: field
-                                .content_type()
-                                .map(|ct| ct.to_string())
-                                .unwrap_or_default(),
-                            content: field_bytes,
-                        },
-                    );
-                } else if let Ok(s) = String::from_utf8(field_bytes) {
-                    multipart_form.insert(name, s);
-                }
-            }
+    let mut request_data = if needs_full {
+        let max_body = state.max_body_size.load(Ordering::Relaxed);
+        match build_full_request_data(&req, payload, method, path, query_string, max_body).await {
+            Ok(rd) => rd,
+            Err(resp) => return resp,
         }
     } else {
-        // Regular body
-        while let Some(chunk) = payload.next().await {
-            if let Ok(data) = chunk {
-                body_bytes.extend_from_slice(&data);
-            }
-        }
-    }
-
-    let request_data = RequestData {
-        method: req.method().clone(),
-        path: req.path().to_string(),
-        query_string: req.query_string().to_string(),
-        headers,
-        body: body_bytes.to_vec(),
-        query_params,
-        files,
-        multipart_form,
+        // Payload intentionally unused — actix drains leftover bytes on keep-alive
+        drop(payload);
+        RequestData::minimal(method, path, query_string)
     };
 
-    // 2. Dispatch to Router
-    let routes = state.routes.read().await;
-    let response_data = routes.process_request(request_data);
-    drop(routes);
+    // Dispatch. Python execution happens on the blocking pool so the
+    // actix reactor threads are never stalled by the GIL or slow handlers.
+    let response_data = if router_has_middleware {
+        offload_router(routes, request_data).await
+    } else {
+        match route_match {
+            RouteMatch::Handler(handler, params) => {
+                request_data.path_params = params;
+                if handler.should_offload() {
+                    offload_handler(handler, request_data).await
+                } else {
+                    handler.handle(request_data)
+                }
+            }
+            RouteMatch::Redirect(location) => Router::redirect_response(location),
+            RouteMatch::NotFound => offload_router(routes, request_data).await,
+        }
+    };
 
-    // 3. Convert ResponseData to Actix Response
+    // Convert ResponseData to Actix Response
 
     // Check if it's a streaming response
     if let Some(iterator) = response_data.stream_iterator {

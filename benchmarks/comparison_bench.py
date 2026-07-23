@@ -1,6 +1,10 @@
 """
 BustAPI vs The World (FastAPI, Quart, Flask)
-Automated WebSocket Benchmark & Plot Generator
+WebSocket *Handshake* Capacity Benchmark & Plot Generator
+
+NOTE: This measures HTTP Upgrade handshake capacity via `oha`, NOT
+message-level WebSocket echo throughput. The echo loops in the competitor
+servers are never exercised. For message throughput use `ws_benchmark.py`.
 
 Usage: uv run python comparison_bench.py
 
@@ -19,6 +23,9 @@ import subprocess
 import sys
 import time
 
+import matplotlib
+
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import psutil
@@ -75,6 +82,7 @@ elif framework == "flask":
             data = ws.receive()
             ws.send(data)
     if __name__ == "__main__":
+        # Dev server — not production-grade; handshake capacity only.
         app.run(host="127.0.0.1", port=port, threaded=True)
 """
 
@@ -93,10 +101,6 @@ def remove_competitor_script():
 # --- 2. Measurement Logic ---
 def get_server_cmd(framework, port):
     if framework == "bustapi":
-        # Use simple bustapi app inline or existing script?
-        # Using module based execution to be safe or existing script?
-        # Let's assume bustapi is installed or in path.
-        # But we need a server. We can reuse bustapi_bench.py if it exists!
         if os.path.exists("bustapi_bench.py"):
             return ["uv", "run", "python", "bustapi_bench.py", "server", str(port)]
         return ["uv", "run", "python", "ws_server.py", str(port)]
@@ -104,17 +108,48 @@ def get_server_cmd(framework, port):
         return ["uv", "run", "python", "competitor_ws_temp.py", framework, str(port)]
 
 
+def _kill_proc_group(proc: subprocess.Popen):
+    """Terminate the whole process group (parent + children)."""
+    try:
+        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        proc.wait(timeout=2)
+    except (ProcessLookupError, subprocess.TimeoutExpired, OSError, AttributeError):
+        try:
+            proc.kill()
+            proc.wait(timeout=1)
+        except (ProcessLookupError, OSError, subprocess.TimeoutExpired):
+            pass
+        try:
+            for child in psutil.Process(proc.pid).children(recursive=True):
+                child.kill()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+
+
 def measure(framework, port):
     cmd = get_server_cmd(framework, port)
     print(f"[{framework}] Starting server: {' '.join(cmd)}")
-    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        preexec_fn=os.setsid if hasattr(os, "setsid") else None,
+    )
 
     try:
-        time.sleep(3)  # Warmup
+        time.sleep(3)  # Warmup / startup
         try:
             p = psutil.Process(proc.pid)
         except psutil.NoSuchProcess:
-            return None
+            print(f"[{framework}] FAILED: process died during startup")
+            return {
+                "framework": framework,
+                "rps": 0.0,
+                "cpu_avg": 0.0,
+                "mem_peak_mb": 0.0,
+                "failed": True,
+                "fail_reason": "process died during startup",
+            }
 
         url = f"http://127.0.0.1:{port}/ws"
         if framework == "bustapi":
@@ -177,24 +212,18 @@ def measure(framework, port):
         avg_cpu = sum(cpu_readings) / len(cpu_readings) if cpu_readings else 0
         peak_mem = max(mem_readings) if mem_readings else 0
 
+        failed = rps <= 0.0
         return {
             "framework": framework,
             "rps": rps,
             "cpu_avg": avg_cpu,
             "mem_peak_mb": peak_mem,
+            "failed": failed,
+            "fail_reason": "oha reported 0 RPS" if failed else "",
         }
 
     finally:
-        proc.terminate()
-        try:
-            proc.wait(timeout=1)
-        except:
-            proc.kill()
-        try:
-            for child in psutil.Process(proc.pid).children(recursive=True):
-                child.kill()
-        except:
-            pass
+        _kill_proc_group(proc)
 
 
 # --- 3. Plotting Logic ---
@@ -204,16 +233,18 @@ def plot_results(results):
     cpu_data = []
     ram_data = []
 
-    # Sort by RPS desc
+    # Sort by RPS desc (failed frameworks land at the bottom with 0)
     results.sort(key=lambda x: x["rps"], reverse=True)
 
     for r in results:
-        frameworks.append(r["framework"].capitalize())
+        label = r["framework"].capitalize()
+        if r.get("failed"):
+            label = f"{label} (FAIL)"
+        frameworks.append(label)
         rps_data.append(r["rps"])
         cpu_data.append(r["cpu_avg"])
         ram_data.append(r["mem_peak_mb"])
 
-    # Colors
     color_rps = "#2E7D32"
     color_ram = "#9C27B0"
     color_cpu = "#FF9800"
@@ -227,13 +258,20 @@ def plot_results(results):
     ax1.set_yticklabels(frameworks, fontweight="bold")
     ax1.invert_yaxis()
     ax1.set_xlabel("Handshakes Per Second (Higher is Better)", fontsize=11)
-    ax1.set_title("WebSocket Handshake Capacity", fontsize=14, fontweight="bold")
+    ax1.set_title(
+        "WebSocket Handshake Capacity (NOT message throughput)",
+        fontsize=14,
+        fontweight="bold",
+    )
     ax1.grid(axis="x", linestyle="--", alpha=0.7)
 
+    max_rps = max(rps_data) if rps_data else 1.0
+    # Dynamic label offset: ~2% of scale, minimum 1
+    x_pad = max(max_rps * 0.02, 1.0)
     for bar in bars1:
         width = bar.get_width()
         ax1.text(
-            width + 100,
+            width + x_pad,
             bar.get_y() + bar.get_height() / 2,
             f"{int(width):,}",
             va="center",
@@ -258,10 +296,12 @@ def plot_results(results):
     ax2.legend()
     ax2.grid(axis="x", linestyle="--", alpha=0.3)
 
+    max_res = max(list(ram_data) + list(cpu_data) + [1.0])
+    res_pad = max(max_res * 0.02, 0.5)
     for bar in bars_ram:
         width = bar.get_width()
         ax2.text(
-            width + 2,
+            width + res_pad,
             bar.get_y() + bar.get_height() / 2,
             f"{int(width)} MB",
             va="center",
@@ -272,7 +312,7 @@ def plot_results(results):
     for bar in bars_cpu:
         width = bar.get_width()
         ax2.text(
-            width + 2,
+            width + res_pad,
             bar.get_y() + bar.get_height() / 2,
             f"{int(width)}%",
             va="center",
@@ -281,8 +321,9 @@ def plot_results(results):
         )
 
     plt.tight_layout()
+    os.makedirs("benchmarks", exist_ok=True)
     plt.savefig("benchmarks/benchmark_comparison.png", dpi=300)
-    print("Saved benchmark_comparison.png")
+    print("Saved benchmarks/benchmark_comparison.png")
 
 
 # --- 4. Main ---
@@ -298,8 +339,7 @@ if __name__ == "__main__":
         results = []
         for fw, port in configs:
             res = measure(fw, port)
-            if res:
-                results.append(res)
+            results.append(res)  # Always include — even failures stay on the chart
             print(f"Result: {res}")
 
         with open("benchmark_results.json", "w") as f:

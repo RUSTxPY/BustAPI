@@ -1,5 +1,6 @@
 //! HTTP Response data structures and utilities
 
+use bytes::Bytes;
 use http::StatusCode;
 use pyo3::{types::PyAny, Py, Python};
 
@@ -8,7 +9,8 @@ use pyo3::{types::PyAny, Py, Python};
 pub struct ResponseData {
     pub status: StatusCode,
     pub headers: Vec<(String, String)>,
-    pub body: Vec<u8>,
+    /// `Bytes` makes cloning responses (turbo cache hits) O(1).
+    pub body: Bytes,
     pub file_path: Option<String>,
     pub stream_iterator: Option<Py<PyAny>>,
 }
@@ -34,30 +36,30 @@ impl ResponseData {
         Self {
             status: StatusCode::OK,
             headers: Vec::new(),
-            body: Vec::new(),
+            body: Bytes::new(),
             file_path: None,
             stream_iterator: None,
         }
     }
 
-    /// Create response from static bytes (zero-copy)
+    /// Create response from static bytes (truly zero-copy)
     pub fn from_static(body: &'static [u8]) -> Self {
         Self {
             status: StatusCode::OK,
             headers: Vec::new(),
-            body: body.to_vec(),
+            body: Bytes::from_static(body),
             file_path: None,
             stream_iterator: None,
         }
     }
 
-    /// Create JSON response with pre-serialized content
+    /// Create JSON response with pre-serialized content (zero-copy)
     pub fn json_static(json: &'static str) -> Self {
         let headers = vec![("Content-Type".to_string(), "application/json".to_string())];
         Self {
             status: StatusCode::OK,
             headers,
-            body: json.as_bytes().to_vec(),
+            body: Bytes::from_static(json.as_bytes()),
             file_path: None,
             stream_iterator: None,
         }
@@ -68,14 +70,14 @@ impl ResponseData {
         Self {
             status,
             headers: Vec::new(),
-            body: Vec::new(),
+            body: Bytes::new(),
             file_path: None,
             stream_iterator: None,
         }
     }
 
     /// Create response with body
-    pub fn with_body<B: Into<Vec<u8>>>(body: B) -> Self {
+    pub fn with_body<B: Into<Bytes>>(body: B) -> Self {
         Self {
             status: StatusCode::OK,
             headers: Vec::new(),

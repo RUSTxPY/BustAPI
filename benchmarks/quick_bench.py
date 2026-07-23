@@ -106,4 +106,4 @@ if __name__ == "__main__":
     print("   Run: wrk -t4 -c100 -d10s http://127.0.0.1:8080/user/123")
     print("   Run: wrk -t4 -c100 -d10s http://127.0.0.1:8080/api/v1/resource25/999")
 
-    app.run(host="127.0.0.1", port=8080, workers=4, debug=False)
+    app.run(host="127.0.0.1", port=8080, workers=1, debug=False)

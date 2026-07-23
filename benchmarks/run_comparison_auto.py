@@ -12,12 +12,15 @@ import platform
 import re
 import shutil
 import signal
+import statistics
 import subprocess
 import sys
 import threading
 import time
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional
 
 import psutil
 
@@ -26,9 +29,15 @@ PORT = 8000
 HOST = "127.0.0.1"
 WRK_THREADS = 4
 WRK_CONNECTIONS = 100
-WRK_DURATION = "3s"  # Short duration for quick check, can be increased
+WRK_DURATION = "10s"  # Stable measurement window
+WRK_WARMUP = "3s"  # Discarded warmup run before measuring
+BENCH_RUNS = 3  # Mean ± stdev over N measured runs
+READY_TIMEOUT = 15.0  # Seconds to wait for server readiness
+READY_PATH = "/"
 
-
+# Worker counts intentionally uneven: BustAPI/Catzilla show single-process
+# throughput; Flask/FastAPI use multi-worker production defaults.
+# Labelled clearly in the report so the comparison is honest.
 WORKERS_CONFIG = {
     "BustAPI": 1,
     "Flask": 4,
@@ -166,10 +175,17 @@ class BenchmarkResult:
     requests_sec: float
     transfer_sec_mb: float
     avg_latency_ms: float
-    min_latency_ms: float
     max_latency_ms: float
+    p50_latency_ms: float
+    p90_latency_ms: float
+    p99_latency_ms: float
     cpu_percent: float
     ram_mb: float
+    # Multi-run stats (populated when BENCH_RUNS > 1)
+    rps_stdev: float = 0.0
+    runs: int = 1
+    failed: bool = False
+    fail_reason: str = ""
 
 
 class ResourceMonitor:
@@ -322,7 +338,22 @@ def parse_size(size_str):
     return float(size_str)
 
 
-def run_wrk(endpoint: str) -> Optional[Dict]:
+def wait_for_ready(timeout: float = READY_TIMEOUT) -> bool:
+    """Poll the server until it responds 2xx/3xx, or timeout."""
+    url = f"http://{HOST}:{PORT}{READY_PATH}"
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=1.0) as resp:
+                if 200 <= resp.status < 400:
+                    return True
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError):
+            pass
+        time.sleep(0.15)
+    return False
+
+
+def run_wrk(endpoint: str, duration: str = WRK_DURATION) -> Optional[Dict]:
     url = f"http://{HOST}:{PORT}{endpoint}"
     cmd = [
         "wrk",
@@ -331,7 +362,7 @@ def run_wrk(endpoint: str) -> Optional[Dict]:
         "-c",
         str(WRK_CONNECTIONS),
         "-d",
-        WRK_DURATION,
+        duration,
         "--latency",
         url,
     ]
@@ -342,51 +373,45 @@ def run_wrk(endpoint: str) -> Optional[Dict]:
             print(f"❌ wrk failed: {result.stderr}")
             return None
 
-        # Parse wrk output
         output = result.stdout
-
-        # Defaults
         data = {
             "rps": 0.0,
             "transfer_mb": 0.0,
             "avg_latency": 0.0,
-            "min_latency": 0.0,
             "max_latency": 0.0,
+            "p50": 0.0,
+            "p90": 0.0,
+            "p99": 0.0,
             "raw": output,
         }
 
-        # Parsing using regex for better accuracy
-        # Requests/sec:  19634.88
         rps_match = re.search(r"Requests/sec:\s+([\d.]+)", output)
         if rps_match:
             data["rps"] = float(rps_match.group(1))
 
-        # Transfer/sec:      2.42MB
         transfer_match = re.search(r"Transfer/sec:\s+([0-9.]+)(\w+)", output)
         if transfer_match:
             val = float(transfer_match.group(1))
             unit = transfer_match.group(2)
             data["transfer_mb"] = parse_size(f"{val}{unit}")
 
-        # Latency   3.89ms    2.17ms  29.98ms   89.38%
-        # Columns: Avg, Stdev, Max, +/- Stdev (approx)
-        # Or detailed stats if present.
-        # But wrk summary line is usually:
-        # Thread Stats   Avg      Stdev     Max   +/- Stdev
-        #   Latency     3.89ms    2.17ms  29.98ms   89.38%
-
+        # Thread Stats latency line: Latency  Avg  Stdev  Max  +/- Stdev
         latency_match = re.search(
             r"Latency\s+([\d\.]+\w+)\s+([\d\.]+\w+)\s+([\d\.]+\w+)", output
         )
         if latency_match:
             data["avg_latency"] = parse_time(latency_match.group(1))
             data["max_latency"] = parse_time(latency_match.group(3))
-            # Min latency isn't directly in summary line, usually need detailed output or approximation.
-            # wrk default doesn't show min in summary table.
-            # However some versions output:
-            # Latency Distribution
-            # 50% 1.2ms ...
-            data["min_latency"] = 0.0  # Not reliably available in default summary
+
+        # Latency Distribution (requires --latency)
+        #   50%    1.23ms
+        #   75%    ...
+        #   90%    ...
+        #   99%    ...
+        for pct, key in (("50%", "p50"), ("90%", "p90"), ("99%", "p99")):
+            m = re.search(rf"{re.escape(pct)}\s+([\d\.]+\w+)", output)
+            if m:
+                data[key] = parse_time(m.group(1))
 
         return data
     except FileNotFoundError:
@@ -394,75 +419,162 @@ def run_wrk(endpoint: str) -> Optional[Dict]:
         sys.exit(1)
 
 
-def benchmark_framework(name: str):
+def _kill_server(proc: subprocess.Popen):
+    """Terminate the process group cleanly."""
+    try:
+        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        proc.wait(timeout=3)
+    except (ProcessLookupError, subprocess.TimeoutExpired, OSError):
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            proc.wait(timeout=2)
+        except (ProcessLookupError, OSError, subprocess.TimeoutExpired):
+            pass
+
+
+def benchmark_framework(name: str) -> List[BenchmarkResult]:
     print(f"\n🚀 Benchmarking {name}...")
 
     # Start Server
     print(f"   Cleaning port {PORT}...")
     subprocess.run(f"fuser -k {PORT}/tcp", shell=True, stderr=subprocess.DEVNULL)
-    time.sleep(1)
+    time.sleep(0.5)
 
     cmd = RUN_COMMANDS[name]
-    # Use generic command execution
-    final_cmd = cmd
-
-    print(f"   Starting: {' '.join(final_cmd)}")
+    print(f"   Starting: {' '.join(cmd)}")
 
     out_file = open(f"stdout_{name}.txt", "w")
     err_file = open(f"stderr_{name}.txt", "w")
 
     proc = subprocess.Popen(
-        final_cmd,
+        cmd,
         cwd=os.getcwd(),
         stdout=out_file,
         stderr=err_file,
         preexec_fn=os.setsid,
     )
 
-    time.sleep(3)  # Give it time to warm up
+    print(f"   Waiting for readiness (timeout {READY_TIMEOUT}s)...", end="", flush=True)
+    if not wait_for_ready():
+        print(" FAILED (server never became ready)")
+        _kill_server(proc)
+        out_file.close()
+        err_file.close()
+        # Report failure for every endpoint so the chart/table stays complete
+        return [
+            BenchmarkResult(
+                framework=name,
+                endpoint=ep,
+                requests_sec=0.0,
+                transfer_sec_mb=0.0,
+                avg_latency_ms=0.0,
+                max_latency_ms=0.0,
+                p50_latency_ms=0.0,
+                p90_latency_ms=0.0,
+                p99_latency_ms=0.0,
+                cpu_percent=0.0,
+                ram_mb=0.0,
+                failed=True,
+                fail_reason="server never became ready",
+            )
+            for ep in ["/", "/json", "/user/10"]
+        ]
+    print(" OK")
 
-    # Initialize monitor
+    # Discarded warmup pass — JIT/allocator/TCP slow-start settle out
+    print(f"   Warmup ({WRK_WARMUP})...", end="", flush=True)
+    run_wrk("/", duration=WRK_WARMUP)
+    print(" done")
+
     monitor = ResourceMonitor(proc.pid)
     monitor.start()
 
-    results = []
+    results: List[BenchmarkResult] = []
     try:
         endpoints = ["/", "/json", "/user/10"]
         for ep in endpoints:
-            print(f"   Measuring {ep}...", end="", flush=True)
-            res = run_wrk(ep)
+            print(f"   Measuring {ep} ({BENCH_RUNS}x {WRK_DURATION})...", end="", flush=True)
 
-            # Restart monitor for clean stats per endpoint
-            monitor.stop()
-            cpu, ram = monitor.get_stats()
-            # Clear samples
-            monitor.cpu_samples = []
-            monitor.ram_samples = []
-            monitor.start()  # Restart
+            rps_samples = []
+            transfer_samples = []
+            avg_lat_samples = []
+            max_lat_samples = []
+            p50_samples = []
+            p90_samples = []
+            p99_samples = []
+            cpu_samples = []
+            ram_samples = []
 
-            if res:
-                print(f" {res['rps']:.2f} req/sec, Latency: {res['avg_latency']:.2f}ms")
+            for _ in range(BENCH_RUNS):
+                res = run_wrk(ep, duration=WRK_DURATION)
+                monitor.stop()
+                cpu, ram = monitor.get_stats()
+                monitor.cpu_samples = []
+                monitor.ram_samples = []
+                monitor.start()
+
+                if res and res["rps"] > 0:
+                    rps_samples.append(res["rps"])
+                    transfer_samples.append(res["transfer_mb"])
+                    avg_lat_samples.append(res["avg_latency"])
+                    max_lat_samples.append(res["max_latency"])
+                    p50_samples.append(res["p50"])
+                    p90_samples.append(res["p90"])
+                    p99_samples.append(res["p99"])
+                    cpu_samples.append(cpu)
+                    ram_samples.append(ram)
+
+            if rps_samples:
+                mean_rps = statistics.mean(rps_samples)
+                stdev_rps = statistics.stdev(rps_samples) if len(rps_samples) > 1 else 0.0
+                print(
+                    f" {mean_rps:,.0f} ± {stdev_rps:,.0f} RPS | "
+                    f"p50={statistics.mean(p50_samples):.2f}ms "
+                    f"p99={statistics.mean(p99_samples):.2f}ms"
+                )
                 results.append(
                     BenchmarkResult(
                         framework=name,
                         endpoint=ep,
-                        requests_sec=res["rps"],
-                        transfer_sec_mb=res["transfer_mb"],
-                        avg_latency_ms=res["avg_latency"],
-                        min_latency_ms=res["min_latency"],
-                        max_latency_ms=res["max_latency"],
-                        cpu_percent=cpu,
-                        ram_mb=ram,
+                        requests_sec=mean_rps,
+                        transfer_sec_mb=statistics.mean(transfer_samples),
+                        avg_latency_ms=statistics.mean(avg_lat_samples),
+                        max_latency_ms=max(max_lat_samples),
+                        p50_latency_ms=statistics.mean(p50_samples),
+                        p90_latency_ms=statistics.mean(p90_samples),
+                        p99_latency_ms=statistics.mean(p99_samples),
+                        cpu_percent=statistics.mean(cpu_samples),
+                        ram_mb=max(ram_samples),
+                        rps_stdev=stdev_rps,
+                        runs=len(rps_samples),
                     )
                 )
             else:
-                print(" Failed")
+                print(" FAILED")
+                results.append(
+                    BenchmarkResult(
+                        framework=name,
+                        endpoint=ep,
+                        requests_sec=0.0,
+                        transfer_sec_mb=0.0,
+                        avg_latency_ms=0.0,
+                        max_latency_ms=0.0,
+                        p50_latency_ms=0.0,
+                        p90_latency_ms=0.0,
+                        p99_latency_ms=0.0,
+                        cpu_percent=0.0,
+                        ram_mb=0.0,
+                        failed=True,
+                        fail_reason="wrk produced no samples",
+                    )
+                )
 
     finally:
         monitor.stop()
-        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-        proc.wait()
-        time.sleep(1)  # Cooldown
+        _kill_server(proc)
+        out_file.close()
+        err_file.close()
+        time.sleep(0.5)  # Cooldown
 
     return results
 
@@ -495,7 +607,8 @@ def main():
         report_lines.append("# ⚡ Ultimate Web Framework Benchmark")
         report_lines.append("")
         report_lines.append(
-            f"> **Date:** {time.strftime('%Y-%m-%d')} | **Tool:** `wrk`"
+            f"> **Date:** {time.strftime('%Y-%m-%d')} | **Tool:** `wrk` | "
+            f"**Runs:** {BENCH_RUNS} × {WRK_DURATION} (+ {WRK_WARMUP} warmup)"
         )
         report_lines.append("")
         report_lines.append("## 🖥️ System Spec")
@@ -506,11 +619,21 @@ def main():
         report_lines.append(f"- **RAM:** `{sys_info['ram_total_gb']} GB`")
         report_lines.append(f"- **Python:** `{sys_info['python']}`")
         report_lines.append("")
+        report_lines.append("## ⚠️ Worker Configuration")
+        report_lines.append("")
+        report_lines.append(
+            "Worker counts are **intentionally uneven**: BustAPI/Catzilla run "
+            "single-process to showcase native throughput; Flask (gunicorn) and "
+            "FastAPI (uvicorn) use multi-worker production defaults. Compare "
+            "absolute RPS *and* RPS-per-worker."
+        )
+        report_lines.append("")
+        for fw, w in WORKERS_CONFIG.items():
+            report_lines.append(f"- **{fw}:** {w} worker(s)")
+        report_lines.append("")
         report_lines.append("## 🏆 Throughput (Requests/sec)")
         report_lines.append("")
 
-        # Throughput Table
-        # Throughput Table
         headers = ["Endpoint", "Metrics"] + [
             f"{fw} ({WORKERS_CONFIG[fw]}w)" for fw in frameworks
         ]
@@ -522,11 +645,19 @@ def main():
         endpoints = ["/", "/json", "/user/10"]
 
         for ep in endpoints:
-            # Metric Rows
             metrics = [
-                ("🚀 RPS", lambda r: f"**{r.requests_sec:,.0f}**"),
+                (
+                    "🚀 RPS (mean±σ)",
+                    lambda r: (
+                        "❌ FAIL"
+                        if r.failed
+                        else f"**{r.requests_sec:,.0f}** ± {r.rps_stdev:,.0f}"
+                    ),
+                ),
                 ("⏱️ Avg Latency", lambda r: f"{r.avg_latency_ms:.2f}ms"),
-                ("📉 Max Latency", lambda r: f"{r.max_latency_ms:.2f}ms"),
+                ("📊 p50 Latency", lambda r: f"{r.p50_latency_ms:.2f}ms"),
+                ("📈 p90 Latency", lambda r: f"{r.p90_latency_ms:.2f}ms"),
+                ("📉 p99 Latency", lambda r: f"{r.p99_latency_ms:.2f}ms"),
                 ("📦 Transfer", lambda r: f"{r.transfer_sec_mb:.2f} MB/s"),
                 ("🔥 CPU Usage", lambda r: f"{r.cpu_percent:.0f}%"),
                 ("🧠 RAM Usage", lambda r: f"{r.ram_mb:.1f} MB"),
@@ -553,12 +684,14 @@ def main():
                     )
                     if res:
                         val = metric_fmt(res)
-                        # Highlight winner for RPS
-                        if metric_name == "🚀 RPS":
+                        # Highlight winner for RPS (skip failed)
+                        if metric_name.startswith("🚀 RPS") and not res.failed:
                             competitors = [
-                                r.requests_sec for r in all_results if r.endpoint == ep
+                                r.requests_sec
+                                for r in all_results
+                                if r.endpoint == ep and not r.failed
                             ]
-                            if res.requests_sec == max(competitors):
+                            if competitors and res.requests_sec == max(competitors):
                                 val = f"🥇 {val}"
                         row.append(val)
                     else:

@@ -1,5 +1,6 @@
 //! HTTP Request data structures and utilities
 
+use bytes::Bytes;
 use http::Method;
 use std::collections::HashMap;
 
@@ -18,10 +19,16 @@ pub struct RequestData {
     pub path: String,
     pub query_string: String,
     pub headers: HashMap<String, String>,
-    pub body: Vec<u8>,
+    /// Body stored as `Bytes` so cloning a request (e.g. middleware path)
+    /// is an O(1) refcount bump instead of a full memcpy.
+    pub body: Bytes,
     pub query_params: HashMap<String, String>,
     pub files: HashMap<String, UploadedFile>,
     pub multipart_form: HashMap<String, String>,
+    /// Path parameters extracted once by the matchit radix tree during
+    /// routing, in pattern order. Handlers consume these directly instead
+    /// of re-parsing the path.
+    pub path_params: Vec<(String, String)>,
 }
 
 impl RequestData {
@@ -32,10 +39,28 @@ impl RequestData {
             path,
             query_string: String::new(),
             headers: HashMap::new(),
-            body: Vec::new(),
+            body: Bytes::new(),
             query_params: HashMap::new(),
             files: HashMap::new(),
             multipart_form: HashMap::new(),
+            path_params: Vec::new(),
+        }
+    }
+
+    /// Create a minimal RequestData for handlers that never touch
+    /// headers/body/query params (turbo, static, fast routes).
+    /// Skips the per-request HashMap allocations entirely.
+    pub fn minimal(method: Method, path: String, query_string: String) -> Self {
+        Self {
+            method,
+            path,
+            query_string,
+            headers: HashMap::new(),
+            body: Bytes::new(),
+            query_params: HashMap::new(),
+            files: HashMap::new(),
+            multipart_form: HashMap::new(),
+            path_params: Vec::new(),
         }
     }
 
@@ -60,7 +85,7 @@ impl RequestData {
 
     /// Get request body as string (assuming UTF-8)
     pub fn body_as_string(&self) -> Result<String, std::string::FromUtf8Error> {
-        String::from_utf8(self.body.clone())
+        String::from_utf8(self.body.to_vec())
     }
 
     /// Get request body as JSON

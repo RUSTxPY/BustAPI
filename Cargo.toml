@@ -1,6 +1,6 @@
 [package]
 name = "bustapi_core"
-version = "0.15.0-rc1"
+version = "0.15.0-rc2"
 edition = "2021"
 
 [lib]
@@ -58,6 +58,7 @@ minijinja = { version = "2.14.0", features = ["loader", "json"] }
 mimalloc = { version = "0.1", optional = true }
 socket2 = { version = "0.5", features = ["all"] }
 matchit = "0.8"  # Radix tree router for O(log n) route matching
+arc-swap = "1"   # Lock-free router snapshots on the request path
 
 [features]
 default = ["mimalloc"]
@@ -71,5 +72,6 @@ pyo3-build-config = "0.28"
 lto = true
 codegen-units = 1
 opt-level = 3
-panic = "abort"
+# panic = "unwind" (default) so catch_unwind at the FFI boundary can
+# turn handler panics into 500s instead of aborting the Python process.
 strip = true
