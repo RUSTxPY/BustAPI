@@ -110,11 +110,6 @@ pub async fn handle_request(
 ) -> HttpResponse {
     let start_time = Instant::now();
     tracing::debug!("handle_request path={} method={}", req.path(), req.method());
-    std::fs::write(
-        "/tmp/bustapi_debug.txt",
-        format!("handle_request path={}\n", req.path()),
-    )
-    .ok();
     for (k, v) in req.headers() {
         tracing::debug!("Header: {} = {:?}", k, v);
     }
