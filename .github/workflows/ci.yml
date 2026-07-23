@@ -102,17 +102,21 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             args: --release --out dist --find-interpreter
+            manylinux: manylinux228
           - os: ubuntu-latest
             target: x86_64-unknown-linux-musl
             args: --release --out dist --find-interpreter
+            manylinux: musllinux_1_2
 
           # Linux ARM64
           - os: ubuntu-latest
             target: aarch64-unknown-linux-gnu
             args: --release --out dist --find-interpreter --no-default-features
+            manylinux: manylinux228
           - os: ubuntu-latest
             target: aarch64-unknown-linux-musl
             args: --release --out dist --find-interpreter --no-default-features
+            manylinux: musllinux_1_2
 
           # Windows
           - os: windows-latest
@@ -138,7 +142,7 @@ jobs:
         with:
           target: ${{ matrix.target }}
           args: ${{ matrix.args }}
-          manylinux: auto
+          manylinux: ${{ matrix.manylinux || 'auto' }}
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4
