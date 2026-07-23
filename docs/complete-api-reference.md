@@ -146,12 +146,16 @@ Run the application server.
 - `workers` (int): Number of worker threads (default: CPU count)
 - `reload` (bool): Enable auto-reload on code changes (default: `False`)
 - `server` (str): Server backend - `'rust'`, `'uvicorn'`, `'gunicorn'`, `'hypercorn'` (default: `'rust'`)
+- `ssl_context` (Tuple[str, str] or SSLContext): Certificate and private key file paths tuple (e.g. `("cert.pem", "key.pem")`) for native HTTPS support
 
 **Example:**
 
 ```python
 # Development mode with auto-reload
 app.run(debug=True, reload=True)
+
+# Native HTTPS (TLS) server
+app.run(host='0.0.0.0', port=8443, ssl_context=('cert.pem', 'key.pem'))
 
 # Production mode with multiple workers
 app.run(host='0.0.0.0', port=8000, workers=4)

@@ -32,6 +32,27 @@ Restart=always
 WantedBy=multi-user.target
 ```
 
+## Native HTTPS (TLS) Support
+
+BustAPI supports native HTTPS/TLS without needing an external reverse proxy like Nginx. Pass your SSL certificate and key paths using the `ssl_context` parameter:
+
+```python
+from bustapi import BustAPI
+
+app = BustAPI()
+
+@app.route("/")
+def home():
+    return {"status": "secure"}
+
+if __name__ == "__main__":
+    app.run(
+        host="0.0.0.0",
+        port=8443,
+        ssl_context=("cert.pem", "key.pem")
+    )
+```
+
 
 
 ## Alternative Servers

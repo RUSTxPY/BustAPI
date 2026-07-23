@@ -788,7 +788,29 @@ def metrics():
 
 ### 1. HTTPS Configuration
 
-**nginx SSL Configuration:**
+**Native HTTPS Support (Built-in Rust Server):**
+
+BustAPI natively supports TLS/HTTPS directly in the embedded Rust Actix-web server using `ssl_context`:
+
+```python
+from bustapi import BustAPI
+
+app = BustAPI()
+
+@app.route("/")
+def index():
+    return {"message": "Hello HTTPS"}
+
+if __name__ == "__main__":
+    # Supply path to SSL Certificate & Key
+    app.run(
+        host="0.0.0.0",
+        port=8443,
+        ssl_context=("cert.pem", "key.pem")
+    )
+```
+
+**Reverse Proxy SSL (nginx Configuration):**
 
 ```nginx
 server {
