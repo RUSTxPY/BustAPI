@@ -5,7 +5,7 @@ Server runner logic for BustAPI.
 import multiprocessing
 import os
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from ..app import BustAPI
@@ -18,16 +18,33 @@ def run_server_rust(
     workers: int,
     debug: bool,
     verbose: bool = False,
+    ssl_context: Optional[Any] = None,
 ):
     """Run the native Rust HTTP server."""
+    ssl_cert, ssl_key = None, None
+    if ssl_context is not None:
+        if isinstance(ssl_context, (tuple, list)) and len(ssl_context) == 2:
+            ssl_cert, ssl_key = str(ssl_context[0]), str(ssl_context[1])
+
     if workers > 1 and not debug:
         from ..multiprocess import spawn_workers
 
-        spawn_workers(app._rust_app, host, port, workers, debug, verbose)
+        spawn_workers(
+            app._rust_app,
+            host,
+            port,
+            workers,
+            debug,
+            verbose,
+            ssl_cert=ssl_cert,
+            ssl_key=ssl_key,
+        )
         return
 
     try:
-        app._rust_app.run(host, port, workers, debug, verbose, workers)
+        app._rust_app.run(
+            host, port, workers, debug, verbose, workers, ssl_cert, ssl_key
+        )
     except KeyboardInterrupt:
         pass
     except Exception as e:

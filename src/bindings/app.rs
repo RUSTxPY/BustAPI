@@ -293,6 +293,8 @@ impl PyBustApp {
     }
 
     /// Run the server
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (host, port, workers, debug, verbose, show_banner=None, ssl_cert=None, ssl_key=None))]
     pub fn run(
         &self,
         host: String,
@@ -301,6 +303,8 @@ impl PyBustApp {
         debug: bool,
         verbose: bool,
         show_banner: Option<usize>,
+        ssl_cert: Option<String>,
+        ssl_key: Option<String>,
     ) -> PyResult<()> {
         let state = self.state.clone();
         let config = ServerConfig {
@@ -309,6 +313,8 @@ impl PyBustApp {
             debug,
             workers,
             show_banner,
+            ssl_cert,
+            ssl_key,
         };
 
         // Initialize logging
@@ -338,6 +344,8 @@ impl PyBustApp {
     }
 
     /// Run the server asynchronously
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (host, port, debug, verbose, show_banner=None, ssl_cert=None, ssl_key=None))]
     pub fn run_async<'p>(
         &self,
         py: Python<'p>,
@@ -346,6 +354,8 @@ impl PyBustApp {
         debug: bool,
         verbose: bool,
         show_banner: Option<usize>,
+        ssl_cert: Option<String>,
+        ssl_key: Option<String>,
     ) -> PyResult<Bound<'p, PyAny>> {
         let state = self.state.clone();
         let config = ServerConfig {
@@ -354,6 +364,8 @@ impl PyBustApp {
             debug,
             workers: 1,
             show_banner,
+            ssl_cert,
+            ssl_key,
         };
 
         if verbose {

@@ -1,0 +1,20 @@
+
+=== Route 1: jsonify (Deferred Serialization) ===
+Running 10s test @ http://127.0.0.1:8080/api/business_logic?sort_by=name
+  8 threads and 100 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency    10.51ms    3.45ms  52.33ms   75.46%
+    Req/Sec     1.15k   212.27     5.11k    91.52%
+  91883 requests in 10.10s, 28.74MB read
+Requests/sec:   9097.37
+Transfer/sec:      2.85MB
+
+=== Route 2: raw dict (Zero-Copy Rust Serialization) ===
+Running 10s test @ http://127.0.0.1:8080/api/business_logic_raw?sort_by=name
+  8 threads and 100 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency    10.13ms    3.20ms  47.33ms   72.45%
+    Req/Sec     1.19k   138.77     1.49k    77.00%
+  95006 requests in 10.01s, 29.72MB read
+Requests/sec:   9492.54
+Transfer/sec:      2.97MB

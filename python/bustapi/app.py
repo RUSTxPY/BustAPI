@@ -319,6 +319,7 @@ class BustAPI(
         workers: Optional[int] = None,
         reload: bool = False,
         server: str = "rust",
+        ssl_context: Optional[Any] = None,
         **options,
     ) -> None:
         if debug:
@@ -332,10 +333,18 @@ class BustAPI(
 
             workers = 1 if debug else multiprocessing.cpu_count()
         if server == "rust":
-            runner.run_server_rust(self, host, port, workers, debug, verbose)
+            runner.run_server_rust(
+                self,
+                host,
+                port,
+                workers,
+                debug,
+                verbose,
+                ssl_context=ssl_context,
+            )
         else:
             getattr(runner, f"run_server_{server}")(
-                self, host, port, workers, debug, **options
+                self, host, port, workers, debug, ssl_context=ssl_context, **options
             )
 
     async def run_async(
@@ -344,6 +353,7 @@ class BustAPI(
         port: int = 5000,
         debug: bool = False,
         verbose: bool = False,
+        ssl_context: Optional[Any] = None,
         **options,
     ) -> None:
         if debug:
@@ -352,7 +362,16 @@ class BustAPI(
 
             runner.setup_debug_logging(self)
         try:
-            await self._rust_app.run_async(host, port, debug, verbose, 1)
+            ssl_cert, ssl_key = None, None
+            if (
+                ssl_context is not None
+                and isinstance(ssl_context, (tuple, list))
+                and len(ssl_context) == 2
+            ):
+                ssl_cert, ssl_key = str(ssl_context[0]), str(ssl_context[1])
+            await self._rust_app.run_async(
+                host, port, debug, verbose, 1, ssl_cert, ssl_key
+            )
         except Exception as e:
             print(f"❌ Async server error: {e}")
 

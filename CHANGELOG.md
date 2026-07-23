@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented here.
 
+## [0.14.4] - 2026-07-23
+
+### Added
+- **Native HTTPS Support**: Enabled native TLS/HTTPS capabilities in the Rust core powered by `rustls` and `rustls-pemfile`. Applications can now specify SSL certificates via `ssl_context=(cert_path, key_path)` in `app.run()` and `app.run_async()`, removing the dependency on external reverse proxies.
+
 ## [0.14.3] - 2026-06-19
 
 ### Fixed

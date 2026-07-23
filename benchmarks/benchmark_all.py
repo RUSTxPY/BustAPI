@@ -30,14 +30,14 @@ WRK_DURATION = "3s"  # Short duration for quick check, can be increased
 
 
 WORKERS_CONFIG = {
-    "BustAPI": 4,
-    "Flask": 4,
-    "FastAPI": 4,
-    "Sanic": 4,
-    "Falcon": 4,
-    "Bottle": 4,
-    "Django": 4,
-    "BlackSheep": 4,
+    "BustAPI": 1,
+    "Flask": 1,
+    "FastAPI": 1,
+    "Sanic": 1,
+    "Falcon": 1,
+    "Bottle": 1,
+    "Django": 1,
+    "BlackSheep": 1,
 }
 
 SERVER_FILES = {

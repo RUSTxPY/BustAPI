@@ -19,6 +19,8 @@ pub struct ServerConfig {
     pub debug: bool,
     pub workers: usize,
     pub show_banner: Option<usize>,
+    pub ssl_cert: Option<String>,
+    pub ssl_key: Option<String>,
 }
 
 impl Default for ServerConfig {
@@ -29,6 +31,8 @@ impl Default for ServerConfig {
             debug: false,
             workers: num_cpus::get(),
             show_banner: Some(num_cpus::get()),
+            ssl_cert: None,
+            ssl_key: None,
         }
     }
 }

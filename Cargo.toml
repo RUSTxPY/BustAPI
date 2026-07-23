@@ -1,6 +1,6 @@
 [package]
 name = "bustapi_core"
-version = "0.14.3"
+version = "0.14.4"
 edition = "2021"
 
 [lib]
@@ -9,11 +9,13 @@ crate-type = ["cdylib"]
 
 [dependencies]
 # Actix-web (replaces Hyper for better performance)
-actix-web = "4.13"
+actix-web = { version = "4.13", features = ["rustls-0_23"] }
 actix-rt = "2.10"
 actix-http = "3.9"
 actix-files = "0.6"
 actix-ws = "0.2.5"
+rustls-pemfile = "2.1"
+rustls = { version = "0.23", features = ["ring"] }
 
 # PyO3 with latest version for Python 3.14 support
 pyo3 = { version = "0.28", features = ["extension-module", "abi3-py310"] }
