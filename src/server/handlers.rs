@@ -182,8 +182,83 @@ async fn offload_handler(handler: Arc<dyn RouteHandler>, req: RequestData) -> Re
     })
 }
 
+/// Run a pre-matched request through middleware + dispatch on the blocking
+/// pool, reusing the already-computed `RouteMatch` instead of re-matching.
+async fn offload_router_matched(
+    routes: Arc<Router>,
+    mut request_data: RequestData,
+    route_match: RouteMatch,
+    has_middleware: bool,
+) -> ResponseData {
+    tokio::task::spawn_blocking(move || {
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            if has_middleware {
+                // Middleware path: run request-phase middleware, dispatch, then response-phase.
+                let mut req_data = request_data;
+                for mw in &routes.middleware {
+                    if let Err(response) = mw.process_request(&mut req_data) {
+                        return response;
+                    }
+                }
+
+                let mut response_data = match route_match {
+                    RouteMatch::Handler(handler, params) => {
+                        req_data.path_params = params;
+                        handler.handle(req_data.clone())
+                    }
+                    RouteMatch::Redirect(location) => Router::redirect_response(location),
+                    RouteMatch::NotFound => match routes.not_found_handler {
+                        Some(ref handler) => handler.handle(req_data.clone()),
+                        None => ResponseData::error(
+                            http::StatusCode::NOT_FOUND,
+                            Some("Not Found"),
+                        ),
+                    },
+                };
+
+                for mw in &routes.middleware {
+                    mw.process_response(&req_data, &mut response_data);
+                }
+                response_data
+            } else {
+                // Fast path: no middleware, dispatch directly.
+                match route_match {
+                    RouteMatch::Handler(handler, params) => {
+                        request_data.path_params = params;
+                        handler.handle(request_data)
+                    }
+                    RouteMatch::Redirect(location) => Router::redirect_response(location),
+                    RouteMatch::NotFound => match routes.not_found_handler {
+                        Some(ref handler) => handler.handle(request_data),
+                        None => ResponseData::error(
+                            http::StatusCode::NOT_FOUND,
+                            Some("Not Found"),
+                        ),
+                    },
+                }
+            }
+        }))
+        .unwrap_or_else(|_| {
+            tracing::error!("Panic caught in request handler");
+            ResponseData::error(
+                actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+                Some("Internal Server Error"),
+            )
+        })
+    })
+    .await
+    .unwrap_or_else(|e| {
+        tracing::error!("Blocking dispatch join error: {:?}", e);
+        ResponseData::error(
+            actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+            Some("Internal Server Error"),
+        )
+    })
+}
+
 /// Build the complete RequestData: header map, query params, body/multipart.
-/// Returns Err(HttpResponse) for early rejects (413 Payload Too Large).
+/// Returns Err(Box<HttpResponse>) for early rejects (413 Payload Too Large).
+/// Boxed to keep the `Result` small (clippy::result_large_err).
 /// Takes `payload` by value so actix-multipart can own the stream.
 async fn build_full_request_data(
     req: &HttpRequest,
@@ -192,7 +267,7 @@ async fn build_full_request_data(
     path: String,
     query_string: String,
     max_body_size: usize,
-) -> Result<RequestData, HttpResponse> {
+) -> Result<RequestData, Box<HttpResponse>> {
     let mut headers = std::collections::HashMap::new();
     for (key, value) in req.headers() {
         if let Ok(v) = value.to_str() {
@@ -207,7 +282,9 @@ async fn build_full_request_data(
         .and_then(|v| v.parse::<usize>().ok())
     {
         if len > max_body_size {
-            return Err(HttpResponse::PayloadTooLarge().body("Request body too large"));
+            return Err(Box::new(
+                HttpResponse::PayloadTooLarge().body("Request body too large"),
+            ));
         }
     }
 
@@ -243,9 +320,9 @@ async fn build_full_request_data(
                     if let Ok(data) = chunk {
                         total += data.len();
                         if total > max_body_size {
-                            return Err(
-                                HttpResponse::PayloadTooLarge().body("Request body too large")
-                            );
+                            return Err(Box::new(
+                                HttpResponse::PayloadTooLarge().body("Request body too large"),
+                            ));
                         }
                         field_bytes.extend_from_slice(&data);
                     }
@@ -273,7 +350,9 @@ async fn build_full_request_data(
         while let Some(chunk) = payload.next().await {
             if let Ok(data) = chunk {
                 if body_bytes.len() + data.len() > max_body_size {
-                    return Err(HttpResponse::PayloadTooLarge().body("Request body too large"));
+                    return Err(Box::new(
+                        HttpResponse::PayloadTooLarge().body("Request body too large"),
+                    ));
                 }
                 body_bytes.extend_from_slice(&data);
             }
@@ -301,8 +380,10 @@ pub async fn handle_request(
 ) -> HttpResponse {
     let start_time = Instant::now();
     tracing::debug!("handle_request path={} method={}", req.path(), req.method());
-    for (k, v) in req.headers() {
-        tracing::debug!("Header: {} = {:?}", k, v);
+    if tracing::enabled!(tracing::Level::DEBUG) {
+        for (k, v) in req.headers() {
+            tracing::debug!("Header: {} = {:?}", k, v);
+        }
     }
 
     // Check for WebSocket upgrade request
@@ -411,7 +492,7 @@ pub async fn handle_request(
         let max_body = state.max_body_size.load(Ordering::Relaxed);
         match build_full_request_data(&req, payload, method, path, query_string, max_body).await {
             Ok(rd) => rd,
-            Err(resp) => return resp,
+            Err(resp) => return *resp,
         }
     } else {
         // Payload intentionally unused — actix drains leftover bytes on keep-alive
@@ -422,7 +503,8 @@ pub async fn handle_request(
     // Dispatch. Python execution happens on the blocking pool so the
     // actix reactor threads are never stalled by the GIL or slow handlers.
     let response_data = if router_has_middleware {
-        offload_router(routes, request_data).await
+        // Middleware path: pass pre-matched route, skip re-matching inside process_request.
+        offload_router_matched(routes, request_data, route_match, true).await
     } else {
         match route_match {
             RouteMatch::Handler(handler, params) => {
@@ -434,7 +516,7 @@ pub async fn handle_request(
                 }
             }
             RouteMatch::Redirect(location) => Router::redirect_response(location),
-            RouteMatch::NotFound => offload_router(routes, request_data).await,
+            RouteMatch::NotFound => offload_router_matched(routes, request_data, RouteMatch::NotFound, false).await,
         }
     };
 

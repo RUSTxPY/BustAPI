@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented here.
 
-## [0.15.0-rc2] - 2026-07-23
+## [0.15.0] - 2026-09-21
 
 ### Performance
 - **Zero-Copy Body**: `RequestData`/`ResponseData` body changed from `Vec<u8>` to `bytes::Bytes` for O(1) cloning on the middleware path.
@@ -19,6 +19,9 @@ All notable changes to this project will be documented here.
 ### Refactoring
 - **Deduplicated Dispatch**: Shared `_extract_call_kwargs` between sync and async dispatch paths eliminates redundant `dict(path_params)` conversion. Bare `except:` replaced with `except Exception:`.
 - **Python Binding Cleanup**: Removed the `pattern` field and manual path-parameter extraction from `PyRouteHandler` in favor of the router-extracted `path_params`.
+
+### Fixed
+- **Release Pipeline**: `build_full_request_data` now returns `Box<HttpResponse>` in the `Err` variant, clearing the `clippy::result_large_err` denial that failed the tagged CI run and blocked the 0.15.0 PyPI/GitHub release.
 
 ### Benchmarks
 - `run_comparison_auto.py`: Statistical rigor with 10s×3 measured runs + 3s discarded warmup, p50/p90/p99 latency, mean±stdev, failure-row reporting, and worker-count disclaimers.
