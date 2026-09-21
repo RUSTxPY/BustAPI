@@ -182,80 +182,6 @@ async fn offload_handler(handler: Arc<dyn RouteHandler>, req: RequestData) -> Re
     })
 }
 
-/// Run a pre-matched request through middleware + dispatch on the blocking
-/// pool, reusing the already-computed `RouteMatch` instead of re-matching.
-async fn offload_router_matched(
-    routes: Arc<Router>,
-    mut request_data: RequestData,
-    route_match: RouteMatch,
-    has_middleware: bool,
-) -> ResponseData {
-    tokio::task::spawn_blocking(move || {
-        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            if has_middleware {
-                // Middleware path: run request-phase middleware, dispatch, then response-phase.
-                let mut req_data = request_data;
-                for mw in &routes.middleware {
-                    if let Err(response) = mw.process_request(&mut req_data) {
-                        return response;
-                    }
-                }
-
-                let mut response_data = match route_match {
-                    RouteMatch::Handler(handler, params) => {
-                        req_data.path_params = params;
-                        handler.handle(req_data.clone())
-                    }
-                    RouteMatch::Redirect(location) => Router::redirect_response(location),
-                    RouteMatch::NotFound => match routes.not_found_handler {
-                        Some(ref handler) => handler.handle(req_data.clone()),
-                        None => ResponseData::error(
-                            http::StatusCode::NOT_FOUND,
-                            Some("Not Found"),
-                        ),
-                    },
-                };
-
-                for mw in &routes.middleware {
-                    mw.process_response(&req_data, &mut response_data);
-                }
-                response_data
-            } else {
-                // Fast path: no middleware, dispatch directly.
-                match route_match {
-                    RouteMatch::Handler(handler, params) => {
-                        request_data.path_params = params;
-                        handler.handle(request_data)
-                    }
-                    RouteMatch::Redirect(location) => Router::redirect_response(location),
-                    RouteMatch::NotFound => match routes.not_found_handler {
-                        Some(ref handler) => handler.handle(request_data),
-                        None => ResponseData::error(
-                            http::StatusCode::NOT_FOUND,
-                            Some("Not Found"),
-                        ),
-                    },
-                }
-            }
-        }))
-        .unwrap_or_else(|_| {
-            tracing::error!("Panic caught in request handler");
-            ResponseData::error(
-                actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-                Some("Internal Server Error"),
-            )
-        })
-    })
-    .await
-    .unwrap_or_else(|e| {
-        tracing::error!("Blocking dispatch join error: {:?}", e);
-        ResponseData::error(
-            actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-            Some("Internal Server Error"),
-        )
-    })
-}
-
 /// Build the complete RequestData: header map, query params, body/multipart.
 /// Returns Err(Box<HttpResponse>) for early rejects (413 Payload Too Large).
 /// Boxed to keep the `Result` small (clippy::result_large_err).
@@ -380,10 +306,8 @@ pub async fn handle_request(
 ) -> HttpResponse {
     let start_time = Instant::now();
     tracing::debug!("handle_request path={} method={}", req.path(), req.method());
-    if tracing::enabled!(tracing::Level::DEBUG) {
-        for (k, v) in req.headers() {
-            tracing::debug!("Header: {} = {:?}", k, v);
-        }
+    for (k, v) in req.headers() {
+        tracing::debug!("Header: {} = {:?}", k, v);
     }
 
     // Check for WebSocket upgrade request
@@ -503,8 +427,7 @@ pub async fn handle_request(
     // Dispatch. Python execution happens on the blocking pool so the
     // actix reactor threads are never stalled by the GIL or slow handlers.
     let response_data = if router_has_middleware {
-        // Middleware path: pass pre-matched route, skip re-matching inside process_request.
-        offload_router_matched(routes, request_data, route_match, true).await
+        offload_router(routes, request_data).await
     } else {
         match route_match {
             RouteMatch::Handler(handler, params) => {
@@ -516,7 +439,7 @@ pub async fn handle_request(
                 }
             }
             RouteMatch::Redirect(location) => Router::redirect_response(location),
-            RouteMatch::NotFound => offload_router_matched(routes, request_data, RouteMatch::NotFound, false).await,
+            RouteMatch::NotFound => offload_router(routes, request_data).await,
         }
     };
 

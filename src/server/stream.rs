@@ -4,19 +4,7 @@ use pyo3::exceptions::{PyRuntimeError, PyStopAsyncIteration, PyStopIteration, Py
 use pyo3::prelude::*;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::OnceLock;
 use std::task::{Context, Poll};
-
-/// Cached `bustapi.utils` module handle — imported once, not per chunk.
-static BUSTAPI_UTILS_MODULE: OnceLock<Py<PyAny>> = OnceLock::new();
-
-fn get_bustapi_utils(py: Python<'_>) -> PyResult<Py<PyAny>> {
-    if let Some(m) = BUSTAPI_UTILS_MODULE.get() {
-        return Ok(m.clone(py));
-    }
-    let module: Py<PyAny> = py.import("bustapi.utils")?.into_any().unbind();
-    Ok(BUSTAPI_UTILS_MODULE.get_or_init(|| module).clone(py))
-}
 
 enum StreamMode {
     Sync,
@@ -98,8 +86,8 @@ impl Stream for PythonStream {
                                 let iter_bound = iterator.bind(py);
                                 match iter_bound.call_method0("__anext__") {
                                     Ok(awaitable) => {
-                                        if let Ok(utils) = get_bustapi_utils(py) {
-                                            match utils.bind(py).call_method1("async_to_sync", (awaitable,))
+                                        if let Ok(utils) = py.import("bustapi.utils") {
+                                            match utils.call_method1("async_to_sync", (awaitable,))
                                             {
                                                 Ok(item) => process_item(py, item),
                                                 Err(e) => {

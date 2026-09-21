@@ -51,8 +51,6 @@ struct HandlerEntry {
     handler: Arc<dyn RouteHandler>,
     method: Method,
     original_pattern: String,
-    /// Pre-compiled matchit pattern (e.g., /users/{id})
-    matchit_pattern: String,
     /// Pre-compiled parameter type constraints (name -> type)
     param_types: Vec<(String, ParamType)>,
 }
@@ -168,12 +166,13 @@ impl Clone for Router {
     fn clone(&self) -> Self {
         let mut method_routers: HashMap<Method, matchit::Router<usize>> = HashMap::new();
         for (id, entry) in self.handlers.iter().enumerate() {
+            let (matchit_pattern, _) = parse_pattern(&entry.original_pattern);
             let method_router = method_routers.entry(entry.method.clone()).or_default();
-            // Reuse pre-compiled matchit_pattern (avoids re-parsing on every clone)
-            if let Err(e) = method_router.insert(&entry.matchit_pattern, id) {
+            // Same conflict policy as add_route: warn and keep the first
+            if let Err(e) = method_router.insert(&matchit_pattern, id) {
                 tracing::warn!(
                     "Route re-insertion warning for {}: {:?}",
-                    entry.matchit_pattern,
+                    matchit_pattern,
                     e
                 );
             }
@@ -215,12 +214,11 @@ impl Router {
         // Parse pattern and extract pre-compiled type information
         let (matchit_pattern, param_types) = parse_pattern(&path);
 
-        // Store handler with pre-compiled param types and matchit pattern
+        // Store handler with pre-compiled param types
         self.handlers.push(HandlerEntry {
             handler: handler_arc.clone(),
             method: method.clone(),
             original_pattern: path.clone(),
-            matchit_pattern: matchit_pattern.clone(),
             param_types,
         });
 
@@ -346,23 +344,22 @@ impl Router {
         let matched = method_router.at(path).ok()?;
         let entry = self.handlers.get(*matched.value)?;
 
-        // Extract params — matchit returns them in pattern order which
-        // matches our param_types order, enabling O(1) index lookup.
+        // Extract + validate in a single pass
         let mut params: Vec<(String, String)> = Vec::with_capacity(entry.param_types.len());
         for (name, value) in matched.params.iter() {
             params.push((name.to_string(), value.to_string()));
         }
 
-        // Validate using index-based O(1) lookup instead of find() loop
-        for (i, (name, param_type)) in entry.param_types.iter().enumerate() {
-            let value = if i < params.len() && params[i].0 == *name {
-                params[i].1.as_str()
-            } else {
-                // Fallback: find by name if ordering assumption fails
-                params.iter().find(|(n, _)| n == name).map(|(_, v)| v.as_str()).unwrap_or("")
-            };
-            if !validate_param_value(value, param_type) {
-                return None;
+        if !entry.param_types.is_empty() {
+            for (name, param_type) in &entry.param_types {
+                let value = params
+                    .iter()
+                    .find(|(n, _)| n == name)
+                    .map(|(_, v)| v.as_str())
+                    .unwrap_or("");
+                if !validate_param_value(value, param_type) {
+                    return None;
+                }
             }
         }
 
@@ -375,47 +372,56 @@ impl Router {
             return None;
         }
 
-        // Check current method, then HEAD -> GET fallback — unified loop
-        // avoids duplicating the strip_suffix / format logic.
-        let methods_to_check: &[Method] = if *method == Method::HEAD {
-            &[Method::HEAD, Method::GET]
+        // Check redirect for current method
+        let redirect_path = if let Some(trimmed) = path.strip_suffix('/') {
+            if self
+                .routes
+                .contains_key(&(method.clone(), trimmed.to_string()))
+            {
+                Some(trimmed.to_string())
+            } else {
+                None
+            }
         } else {
-            std::slice::from_ref(method)
+            let slashed = format!("{}/", path);
+            if self.routes.contains_key(&(method.clone(), slashed.clone())) {
+                Some(slashed)
+            } else {
+                None
+            }
         };
 
-        for m in methods_to_check {
-            let redirect_path = if let Some(trimmed) = path.strip_suffix('/') {
-                if self.routes.contains_key(&(m.clone(), trimmed.to_string())) {
-                    Some(trimmed.to_string())
+        // HEAD -> GET fallback for redirect
+        let redirect_path = redirect_path.or_else(|| {
+            if *method == Method::HEAD {
+                let get_method = Method::GET;
+                if let Some(trimmed) = path.strip_suffix('/') {
+                    if self
+                        .routes
+                        .contains_key(&(get_method.clone(), trimmed.to_string()))
+                    {
+                        return Some(trimmed.to_string());
+                    }
                 } else {
-                    None
+                    let slashed = format!("{}/", path);
+                    if self
+                        .routes
+                        .contains_key(&(get_method.clone(), slashed.clone()))
+                    {
+                        return Some(slashed);
+                    }
                 }
-            } else {
-                let mut slashed = String::with_capacity(path.len() + 1);
-                slashed.push_str(path);
-                slashed.push('/');
-                if self.routes.contains_key(&(m.clone(), slashed.clone())) {
-                    Some(slashed)
-                } else {
-                    None
-                }
-            };
-
-            if let Some(new_path) = redirect_path {
-                return Some(if query_string.is_empty() {
-                    new_path
-                } else {
-                    let mut result =
-                        String::with_capacity(new_path.len() + 1 + query_string.len());
-                    result.push_str(&new_path);
-                    result.push('?');
-                    result.push_str(query_string);
-                    result
-                });
             }
-        }
+            None
+        });
 
-        None
+        redirect_path.map(|new_path| {
+            if !query_string.is_empty() {
+                format!("{}?{}", new_path, query_string)
+            } else {
+                new_path
+            }
+        })
     }
 
     /// Build the 307 redirect response for a resolved Location

@@ -181,11 +181,9 @@ impl RouteHandler for PyAsyncRouteHandler {
 
                                         if is_coro_bool {
                                             // Run coroutine
-                                            let asyncio_mod = get_asyncio(py);
-                                            if let Ok(asyncio_ref) = asyncio_mod {
-                                                if let Ok(loop_obj) =
-                                                    asyncio_ref.call_method0(py, "get_event_loop")
-                                                {
+                                            if let Ok(loop_obj) =
+                                                asyncio.call_method0(py, "get_event_loop")
+                                            {
                                                 if let Ok(awaited) = loop_obj.call_method1(
                                                     py,
                                                     "run_until_complete",
