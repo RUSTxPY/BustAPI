@@ -513,6 +513,36 @@ def get_load_dotenv(default: bool = True) -> bool:
     return os.environ.get("FLASK_SKIP_DOTENV", "").lower() not in ("1", "true", "yes")
 
 
+def detect_import_name(depth: int = 2, fallback: Optional[str] = None) -> str:
+    """
+    Best-effort import name of a caller's module.
+
+    ``depth`` is counted from inside this function (0), so the default of 2
+    means "the caller of the function that called ``detect_import_name``"
+    (helper -> ``__init__`` -> ``Blueprint()`` / ``BustAPI()``).
+
+    Args:
+        depth: Stack depth of the frame whose module should be resolved.
+        fallback: Value returned when the frame or its module is unavailable.
+
+    Returns:
+        The ``__name__`` of the resolved module, or ``fallback``.
+    """
+    import sys
+
+    try:
+        frame = sys._getframe(depth)
+    except (AttributeError, ValueError):
+        return fallback or "__main__"
+
+    # ``__name__`` in the frame globals covers ``-c``/REPL frames that
+    # ``inspect.getmodule`` cannot map back to a module object.
+    name = frame.f_globals.get("__name__")
+    if name:
+        return name
+    return fallback or "__main__"
+
+
 def get_root_path(import_name: str) -> str:
     """
     Find the root path of a package or module.

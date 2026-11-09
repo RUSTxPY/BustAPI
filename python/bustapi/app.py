@@ -45,11 +45,9 @@ class BustAPI(
         redirect_slashes: bool = True,
     ):
         if import_name is None:
-            import inspect
+            from .core.helpers import detect_import_name
 
-            frame = inspect.stack()[1]
-            module = inspect.getmodule(frame[0])
-            import_name = module.__name__ if module else self.__class__.__module__
+            import_name = detect_import_name(2, self.__class__.__module__)
 
         self.import_name = import_name
 

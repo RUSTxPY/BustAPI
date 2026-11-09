@@ -25,7 +25,7 @@ class Blueprint:
     def __init__(
         self,
         name: str,
-        import_name: str,
+        import_name: Optional[str] = None,
         static_folder: Optional[str] = None,
         static_url_path: Optional[str] = None,
         template_folder: Optional[str] = None,
@@ -39,8 +39,12 @@ class Blueprint:
         Initialize blueprint.
 
         Args:
-            name: Blueprint name
-            import_name: Import name (usually __name__)
+            name: Blueprint name. Required because it is the blueprint's identity:
+                it keys ``app.blueprints[name]`` and prefixes every endpoint
+                (``"<name>.<view>"``), so two blueprints would otherwise collide.
+            import_name: Import name (usually ``__name__``). Optional — when
+                omitted it is resolved from the calling module, matching
+                ``BustAPI()``.
             static_folder: Static files folder
             static_url_path: Static files URL path
             template_folder: Template folder
@@ -50,6 +54,14 @@ class Blueprint:
             root_path: Root path
             cli_group: CLI group name
         """
+        if not name or not isinstance(name, str):
+            raise ValueError("'name' must be a non-empty string.")
+
+        if import_name is None:
+            from ..core.helpers import detect_import_name
+
+            import_name = detect_import_name(2)
+
         self.name = name
         self.import_name = import_name
         self.static_folder = static_folder
