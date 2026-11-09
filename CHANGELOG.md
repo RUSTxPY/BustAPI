@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented here.
 
+## [0.16.0] - 2026-11-09
+
+### Added
+- **Optional `Blueprint.import_name`**: `Blueprint("auth", url_prefix="/auth")` now works. When `import_name` is omitted it is resolved from the calling module, the same way `BustAPI()` already did it. Existing `Blueprint("auth", __name__)` calls are unchanged.
+- **`bustapi.core.helpers.detect_import_name()`**: resolves a caller's module name via `sys._getframe` + `frame.f_globals["__name__"]`, so it also works for `-c`, REPL, threads, and dynamically loaded modules where `inspect.getmodule()` returns `None`.
+
+### Changed
+- **`Blueprint.name` validation**: an empty or non-string name now raises `ValueError` instead of producing a blueprint that cannot be registered.
+- **`BustAPI.__init__`**: reuses `detect_import_name()` instead of duplicating inline `inspect.stack()` introspection.
+
+### Notes
+- `name` remains a required argument. It is the blueprint's identity: it keys `app.blueprints[name]` and prefixes every endpoint (`"<name>.<view>"`), so two blueprints declared in the same module would collide if it were inferred.
+
 ## [0.15.0] - 2026-09-21
 
 ### Performance
